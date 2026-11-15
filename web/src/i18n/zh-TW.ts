@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "工作台", agents: "智慧體", builder: "建造師", kb: "知識庫", settings: "設定", models: "模型", system: "系統與外觀", thisHost: "本機", lanOn: "區域網路存取：已開啟", lanOff: "僅本機可用", remote: "已連線到主機" },
+  nav: { workbench: "工作台", agents: "智慧體", builder: "建造師", kb: "知識庫", settings: "設定", models: "模型", system: "系統與外觀", thisHost: "本機", lanOn: "區域網路存取：已開啟", lanOff: "僅本機可用", remote: "已連線到主機", help: "使用說明" },
   common: { save: "儲存", cancel: "取消", delete: "刪除", edit: "編輯", close: "關閉", copy: "複製", copied: "已複製", retry: "重試", loading: "載入中…", confirmDelete: "再點一次確認刪除" },
   agents: {
     byTalking: "對話生成",
@@ -245,12 +245,16 @@ const messages: typeof zh = {
     emptyList: "還沒有推論服務，請新增一個。",
   },
   system: {
+    help: "使用說明",
+    noAddress: "沒有找到區域網路位址，請確認這台機器已連上網路。",
+    lanFixed: "監聽位址由啟動參數指定，這裡不能更改。",
+    lanSwitch: "允許其他裝置存取",
     title: "系統與外觀",
     lan: "區域網路存取",
     lanOnDesc: "其他裝置可以用瀏覽器開啟下面的位址，第一次需要輸入存取碼。",
-    lanOffDesc: "現在只有這台機器能用。要讓其他裝置存取，請用 --listen 0.0.0.0:8600 啟動服務。",
+    lanOffDesc: "現在只有這台機器能用。開啟下面的開關後，區域網路裡的其他裝置可以用瀏覽器存取。",
     address: "存取位址",
-    addressHint: "把 <主機位址> 換成這台機器在區域網路裡的位址",
+    addressHint: "其他裝置在瀏覽器裡開啟下面任一位址（取決於它和這台機器連的是哪個網路）。",
     accessCode: "存取碼",
     show: "檢視",
     hide: "隱藏",

@@ -1,0 +1,18 @@
+[Unit]
+Description=CommonBot
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+# install.sh 会把 __USER__ 换成安装时的用户：服务以他的身份运行，数据在他的主目录下
+User=__USER__
+ExecStart=/opt/commonbot/commonbot
+Restart=on-failure
+RestartSec=3
+# 只需要读写自己的数据目录
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=full
+
+[Install]
+WantedBy=multi-user.target

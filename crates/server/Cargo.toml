@@ -16,6 +16,7 @@ clap = { version = "4", features = ["derive", "env"] }
 commonbot-core = { path = "../core" }
 dirs = "5"
 futures.workspace = true
+if-addrs = "0.15.0"
 mime_guess = "2"
 rust-embed = "8"
 serde.workspace = true

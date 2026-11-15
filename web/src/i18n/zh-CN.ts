@@ -1,5 +1,5 @@
 export default {
-  nav: { workbench: "工作台", agents: "智能体", builder: "建造师", kb: "知识库", settings: "设置", models: "模型", system: "系统与外观", thisHost: "本机", lanOn: "局域网访问：已开启", lanOff: "仅本机可用", remote: "已连接到主机" },
+  nav: { workbench: "工作台", agents: "智能体", builder: "建造师", kb: "知识库", settings: "设置", models: "模型", system: "系统与外观", thisHost: "本机", lanOn: "局域网访问：已开启", lanOff: "仅本机可用", remote: "已连接到主机", help: "使用说明" },
   common: { save: "保存", cancel: "取消", delete: "删除", edit: "编辑", close: "关闭", copy: "复制", copied: "已复制", retry: "重试", loading: "加载中…", confirmDelete: "再点一次确认删除" },
   agents: {
     byTalking: "对话生成",
@@ -243,12 +243,16 @@ export default {
     emptyList: "还没有推理服务，请添加一个。",
   },
   system: {
+    help: "使用说明",
+    noAddress: "没有找到局域网地址，请确认这台机器已连上网络。",
+    lanFixed: "监听地址由启动参数指定，这里不能改。",
+    lanSwitch: "允许其他设备访问",
     title: "系统与外观",
     lan: "局域网访问",
     lanOnDesc: "其他设备可以用浏览器打开下面的地址，第一次需要输入访问码。",
-    lanOffDesc: "现在只有这台机器能用。要让其他设备访问，请用 --listen 0.0.0.0:8600 启动服务。",
+    lanOffDesc: "现在只有这台机器能用。打开下面的开关后，局域网里的其他设备可以用浏览器访问。",
     address: "访问地址",
-    addressHint: "把 <主机地址> 换成这台机器在局域网里的地址",
+    addressHint: "其他设备在浏览器里打开下面任一地址（取决于它和这台机器连的是哪个网络）。",
     accessCode: "访问码",
     show: "查看",
     hide: "隐藏",

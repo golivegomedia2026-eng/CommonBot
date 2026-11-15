@@ -211,6 +211,8 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
 
 export const api = {
   health: () => call<Health>("GET", "/health"),
+  system: () => call<{ version: string; lan: boolean; lan_fixed: boolean; port: number; addresses: string[] }>("GET", "/system"),
+  setLan: (enabled: boolean) => call<{ lan: boolean }>("PUT", "/system/lan", { enabled }),
   enterAccessCode: (code: string) => call<{ ok: boolean }>("POST", "/access", { code }),
   accessCode: () => call<{ code: string; listen: string }>("GET", "/access-code"),
   resetAccessCode: () => call<{ code: string; listen: string }>("POST", "/access-code"),

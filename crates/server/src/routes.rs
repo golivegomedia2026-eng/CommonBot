@@ -22,6 +22,8 @@ pub fn api() -> Router<AppState> {
         .route("/providers", get(list_providers).post(create_provider))
         .route("/providers/{id}", axum::routing::put(update_provider).delete(delete_provider))
         .route("/providers/{id}/check", post(check_provider))
+        .route("/system", get(system_info))
+        .route("/system/lan", axum::routing::put(set_lan))
         .route("/settings/web", get(get_web).put(put_web))
         .route("/settings/web/test", post(test_web))
         .route("/agents", get(list_agents).post(create_agent))
@@ -45,7 +47,7 @@ async fn health(State(st): State<AppState>, Extension(caller): Extension<Caller>
         "version": VERSION,
         "local": caller.local,
         "authed": caller.authed,
-        "lan": !st.listen.ip().is_loopback(),
+        "lan": !st.listening().ip().is_loopback(),
     }))
 }
 
@@ -82,14 +84,64 @@ fn require_local(caller: Caller) -> ApiResult<()> {
 async fn show_access_code(State(st): State<AppState>, Extension(caller): Extension<Caller>) -> ApiResult<Json<Value>> {
     require_local(caller)?;
     let code = st.db.run(|c| store::access_code(c)).await?;
-    Ok(Json(json!({ "code": code, "listen": st.listen.to_string() })))
+    Ok(Json(json!({ "code": code, "listen": st.listening().to_string() })))
 }
 
 async fn reset_access_code(State(st): State<AppState>, Extension(caller): Extension<Caller>) -> ApiResult<Json<Value>> {
     require_local(caller)?;
     let (code, token) = st.db.run(|c| Ok((store::reset_access_code(c)?, store::access_token(c)?))).await?;
     *st.access_token.write().unwrap_or_else(|p| p.into_inner()) = token;
-    Ok(Json(json!({ "code": code, "listen": st.listen.to_string() })))
+    Ok(Json(json!({ "code": code, "listen": st.listening().to_string() })))
+}
+
+/// 这台机器在局域网里的地址，给其他设备访问用。
+fn lan_addresses() -> Vec<String> {
+    if_addrs::get_if_addrs()
+        .map(|list| {
+            let mut v: Vec<String> = list
+                .into_iter()
+                .filter(|i| !i.is_loopback())
+                .filter_map(|i| match i.ip() {
+                    std::net::IpAddr::V4(ip) if !ip.is_link_local() => Some(ip.to_string()),
+                    _ => None,
+                })
+                .collect();
+            v.sort();
+            v.dedup();
+            v
+        })
+        .unwrap_or_default()
+}
+
+async fn system_info(State(st): State<AppState>) -> Json<Value> {
+    let addr = st.listening();
+    Json(json!({
+        "version": VERSION,
+        "lan": !addr.ip().is_loopback(),
+        "lan_fixed": st.listen_fixed,
+        "port": addr.port(),
+        "addresses": lan_addresses(),
+    }))
+}
+
+#[derive(Deserialize)]
+struct LanBody {
+    enabled: bool,
+}
+
+/// 开关局域网访问。只能在运行服务的这台机器上操作；保存后服务按新设置重新监听，不需要重启。
+async fn set_lan(
+    State(st): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<LanBody>,
+) -> ApiResult<Json<Value>> {
+    require_local(caller)?;
+    if st.listen_fixed {
+        return Err(ApiError::new(StatusCode::CONFLICT, "lan_fixed", "the listen address is set by a start-up option"));
+    }
+    st.db.run(move |c| store::set_setting(c, "lan", if body.enabled { "1" } else { "0" })).await?;
+    st.rebind.notify_one();
+    Ok(Json(json!({ "lan": body.enabled })))
 }
 
 // ---------- 推理后端 ----------

@@ -27,8 +27,12 @@ pub const VERSION: &str = env!("CARGO_PKG_VERSION");
 pub struct AppState {
     pub db: Db,
     pub llm: LlmClient,
-    /// 服务监听的地址，用来告诉界面是否对局域网开放。
-    pub listen: SocketAddr,
+    /// 服务当前监听的地址，用来告诉界面是否对局域网开放。在界面里开关局域网访问时会变。
+    pub listen: Arc<RwLock<SocketAddr>>,
+    /// 监听地址由启动参数指定时，界面里不能改。
+    pub listen_fixed: bool,
+    /// 通知主循环按新设置重新监听。
+    pub rebind: Arc<tokio::sync::Notify>,
     /// 知识库检索。
     pub retriever: Retriever,
     /// 知识库入库队列。
@@ -61,10 +65,18 @@ impl AppState {
             ),
             db,
             llm,
-            listen,
+            listen: Arc::new(RwLock::new(listen)),
+            listen_fixed: true,
+            rebind: Arc::default(),
             access_token: Arc::new(RwLock::new(token)),
             access_failures: Arc::default(),
         })
+    }
+}
+
+impl AppState {
+    pub fn listening(&self) -> SocketAddr {
+        *self.listen.read().unwrap_or_else(|p| p.into_inner())
     }
 }
 

@@ -42,6 +42,7 @@ onMounted(boot);
       <span class="group">{{ $t("nav.settings") }}</span>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>
+      <RouterLink class="link" active-class="on" to="/help">{{ $t("nav.help") }}</RouterLink>
       <div class="host">
         <b><span class="dot" />{{ state.health.local ? $t("nav.thisHost") : $t("nav.remote") }}</b>
         <template v-if="state.health.local">{{ state.health.lan ? $t("nav.lanOn") : $t("nav.lanOff") }}</template>

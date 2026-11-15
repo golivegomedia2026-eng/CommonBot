@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "ワークスペース", agents: "エージェント", builder: "ビルダー", kb: "ナレッジ", settings: "設定", models: "モデル", system: "システムと外観", thisHost: "このマシン", lanOn: "LAN アクセス：オン", lanOff: "このマシンのみ", remote: "ホストに接続中" },
+  nav: { workbench: "ワークスペース", agents: "エージェント", builder: "ビルダー", kb: "ナレッジ", settings: "設定", models: "モデル", system: "システムと外観", thisHost: "このマシン", lanOn: "LAN アクセス：オン", lanOff: "このマシンのみ", remote: "ホストに接続中", help: "使い方" },
   common: { save: "保存", cancel: "キャンセル", delete: "削除", edit: "編集", close: "閉じる", copy: "コピー", copied: "コピーしました", retry: "再試行", loading: "読み込み中…", confirmDelete: "もう一度押すと削除します" },
   agents: {
     byTalking: "対話で作成",
@@ -245,12 +245,16 @@ const messages: typeof zh = {
     emptyList: "推論サービスがまだありません。追加してください。",
   },
   system: {
+    help: "使い方",
+    noAddress: "LAN のアドレスが見つかりません。このマシンがネットワークに接続されているか確認してください。",
+    lanFixed: "待ち受けアドレスは起動オプションで指定されているため、ここでは変更できません。",
+    lanSwitch: "他の端末からのアクセスを許可",
     title: "システムと外観",
     lan: "LAN アクセス",
     lanOnDesc: "他の端末はブラウザーで下のアドレスを開けます。初回はアクセスコードの入力が必要です。",
-    lanOffDesc: "現在はこのマシンだけが使えます。他の端末から使うには --listen 0.0.0.0:8600 を付けてサービスを起動してください。",
+    lanOffDesc: "現在はこのマシンだけが使えます。下のスイッチをオンにすると、LAN 内の他の端末からブラウザーで利用できます。",
     address: "アドレス",
-    addressHint: "<ホストのアドレス> を、このマシンの LAN 内のアドレスに置き換えてください",
+    addressHint: "他の端末は、下のいずれかのアドレスをブラウザーで開きます（このマシンと同じネットワークのもの）。",
     accessCode: "アクセスコード",
     show: "表示",
     hide: "隠す",

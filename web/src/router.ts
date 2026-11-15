@@ -10,6 +10,7 @@ export const router = createRouter({
     { path: "/a/:token", name: "public", component: () => import("./pages/PublicPage.vue"), meta: { bare: true, public: true } },
     { path: "/kb/:folderId?", name: "kb", component: () => import("./pages/KbPage.vue") },
     { path: "/settings/models", name: "models", component: () => import("./pages/ModelsPage.vue") },
+    { path: "/help", name: "help", component: () => import("./pages/HelpPage.vue") },
     { path: "/settings/system", name: "system", component: () => import("./pages/SystemPage.vue") },
     { path: "/access", name: "access", component: () => import("./pages/AccessPage.vue"), meta: { bare: true } },
     { path: "/:rest(.*)*", redirect: "/agents" },

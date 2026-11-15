@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "Workspace", agents: "Agents", builder: "Builder", kb: "Knowledge", settings: "Settings", models: "Models", system: "System & appearance", thisHost: "This machine", lanOn: "LAN access: on", lanOff: "This machine only", remote: "Connected to host" },
+  nav: { workbench: "Workspace", agents: "Agents", builder: "Builder", kb: "Knowledge", settings: "Settings", models: "Models", system: "System & appearance", thisHost: "This machine", lanOn: "LAN access: on", lanOff: "This machine only", remote: "Connected to host", help: "User guide" },
   common: { save: "Save", cancel: "Cancel", delete: "Delete", edit: "Edit", close: "Close", copy: "Copy", copied: "Copied", retry: "Retry", loading: "Loading…", confirmDelete: "Click again to delete" },
   agents: {
     byTalking: "Create by talking",
@@ -245,12 +245,16 @@ const messages: typeof zh = {
     emptyList: "No inference service yet. Add one.",
   },
   system: {
+    help: "User guide",
+    noAddress: "No network address was found. Check that this machine is connected to a network.",
+    lanFixed: "The listen address is set by a start-up option and can't be changed here.",
+    lanSwitch: "Allow other devices",
     title: "System & appearance",
     lan: "LAN access",
     lanOnDesc: "Other devices can open the address below in a browser. They enter the access code the first time.",
-    lanOffDesc: "Only this machine can use it now. To let other devices in, start the service with --listen 0.0.0.0:8600.",
+    lanOffDesc: "Only this machine can use it now. Turn on the switch below to let other devices on your network open it in a browser.",
     address: "Address",
-    addressHint: "Replace <host address> with this machine's address on your network",
+    addressHint: "Other devices open one of these addresses in a browser (whichever network they share with this machine).",
     accessCode: "Access code",
     show: "Show",
     hide: "Hide",

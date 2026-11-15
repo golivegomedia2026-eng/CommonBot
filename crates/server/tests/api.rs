@@ -1310,3 +1310,43 @@ async fn builder_turns_an_interview_into_a_published_agent() {
         StatusCode::OK
     );
 }
+
+#[tokio::test]
+async fn lan_switch_is_local_only_and_respects_a_fixed_address() {
+    // 测试里的服务用固定地址启动：界面不能改
+    let app = setup().await;
+    let info = req(Method::GET, "/api/system").send(&app).await.json();
+    assert_eq!(
+        (info["lan"].clone(), info["lan_fixed"].clone(), info["port"].clone()),
+        (json!(true), json!(true), json!(8600))
+    );
+    assert!(info["addresses"].is_array());
+    let r = req(Method::PUT, "/api/system/lan").json(json!({ "enabled": false })).send(&app).await;
+    assert_eq!((r.status, r.json()["code"].as_str().unwrap().to_string()), (StatusCode::CONFLICT, "lan_fixed".into()));
+
+    // 没固定地址时：本机可以开关并触发重新监听；其他设备即使有访问码也不能改
+    let db = Db::open_in_memory().unwrap();
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let mut state = AppState::new(db.clone(), "127.0.0.1:8600".parse().unwrap(), dir, None).await.unwrap();
+    state.listen_fixed = false;
+    let rebind = state.rebind.clone();
+    let app = commonbot_server::app(state);
+    let waiter = tokio::spawn(async move { rebind.notified().await });
+    assert_eq!(
+        req(Method::PUT, "/api/system/lan").json(json!({ "enabled": true })).send(&app).await.status,
+        StatusCode::OK
+    );
+    tokio::time::timeout(std::time::Duration::from_secs(2), waiter)
+        .await
+        .expect("the server is told to listen again")
+        .unwrap();
+    let saved = db.run(|c| commonbot_core::store::get_setting(c, "lan")).await.unwrap();
+    assert_eq!(saved.as_deref(), Some("1"));
+
+    let code = req(Method::GET, "/api/access-code").send(&app).await.json()["code"].as_str().unwrap().to_string();
+    let cookie =
+        req(Method::POST, "/api/access").remote().json(json!({ "code": code })).send(&app).await.cookie.unwrap();
+    let mut r = req(Method::PUT, "/api/system/lan").remote().json(json!({ "enabled": false }));
+    r.cookie = Some(&cookie);
+    assert_eq!(r.send(&app).await.json()["code"], "local_only");
+}

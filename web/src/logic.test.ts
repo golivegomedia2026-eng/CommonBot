@@ -82,3 +82,14 @@ describe("linkCitations", () => {
     expect(linkCitations(html, 0)).toBe(html);
   });
 });
+
+describe("user guide", () => {
+  it("exists in every language with the same sections", () => {
+    const guides = import.meta.glob("./guide/*.md", { query: "?raw", import: "default", eager: true }) as Record<string, string>;
+    const read = (lang: string) => guides[`./guide/${lang}.md`];
+    const sections = (text: string) => text.split("\n").filter((l) => /^#{2,3} /.test(l)).map((l) => l.match(/^#+/)![0] + (l.match(/\d+\./)?.[0] ?? ""));
+    const base = sections(read("zh-CN"));
+    expect(base.length).toBeGreaterThan(10);
+    for (const lang of ["zh-TW", "en", "ja"]) expect(sections(read(lang)), lang).toEqual(base);
+  });
+});
