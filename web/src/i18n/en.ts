@@ -111,6 +111,9 @@ const messages: typeof zh = {
     saved: "Saved",
   },
   web: {
+    noteIrrelevant: "No web results this time: what the search engine returned was unrelated to the question and was dropped.",
+    builtinHint: "Fetches results straight from Bing — no other service, no key. Search engines sometimes return unrelated content to programs; such results are dropped automatically.",
+    builtin: "Built-in search (no setup needed)",
     chip: "Web",
     title: "Web search",
     subtitle: "Used when an agent needs to search the web. Leave it off and everything else still works.",
@@ -294,6 +297,7 @@ const messages: typeof zh = {
     enter: "Enter",
   },
   errors: {
+    web_irrelevant: "The search engine returned unrelated content. Try rephrasing, or choose another search service under Models",
     invalid_publish_needs_model: "Fix a model before publishing",
     invalid_draft_incomplete: "The draft still needs a name or what it handles",
     tests_unreadable: "Test questions couldn't be generated; try again or use another model",

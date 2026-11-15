@@ -79,7 +79,7 @@ export interface Attachment {
   skipped_pages: number;
 }
 export interface WebSettings {
-  kind: "none" | "searxng" | "tavily" | "bocha";
+  kind: "builtin" | "none" | "searxng" | "tavily" | "bocha";
   base_url: string;
   has_key: boolean;
   fetch_pages: boolean;

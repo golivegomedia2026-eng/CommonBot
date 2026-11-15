@@ -111,6 +111,9 @@ const messages: typeof zh = {
     saved: "保存しました",
   },
   web: {
+    noteIrrelevant: "今回は Web の結果がありません。検索エンジンが返した内容が質問と無関係だったため破棄しました。",
+    builtinHint: "Bing から検索結果を直接取得します。他のサービスもキーも不要です。検索エンジンがプログラムに無関係な内容を返すことがあり、そうした結果は自動的に捨てられます。",
+    builtin: "内蔵の検索（設定不要）",
     chip: "Web 検索",
     title: "Web 検索",
     subtitle: "エージェントが Web を検索するときに使います。設定しなくても他の機能はそのまま使えます。",
@@ -294,6 +297,7 @@ const messages: typeof zh = {
     enter: "入る",
   },
   errors: {
+    web_irrelevant: "検索エンジンが無関係な内容を返しました。言い方を変えて試すか、「モデル」で別の検索サービスを選んでください",
     invalid_publish_needs_model: "公開する前にモデルを固定してください",
     invalid_draft_incomplete: "下書きに名前または担当する仕事がありません",
     tests_unreadable: "テスト用の質問を作れませんでした。もう一度試すか、別のモデルを使ってください",

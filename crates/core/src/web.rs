@@ -16,7 +16,7 @@ use crate::{Error, Result};
 /// 搜索服务的设置。
 #[derive(Debug, Clone, Serialize, Default)]
 pub struct WebSettings {
-    /// `none`（不联网）/ `searxng`（自建，不需要密钥）/ `tavily` / `bocha`。
+    /// `builtin`（内置，直接向必应取结果，不需要任何配置）/ `none`（不联网）/ `searxng`（自建）/ `tavily` / `bocha`。
     pub kind: String,
     /// 自建搜索的地址，如 `http://127.0.0.1:8888`。
     pub base_url: String,
@@ -42,7 +42,8 @@ pub fn settings(c: &Connection) -> Result<WebSettings> {
     let api_key = get("web.api_key")?;
     let kind = get("web.kind")?;
     Ok(WebSettings {
-        kind: if kind.is_empty() { "none".into() } else { kind },
+        // 没设置过时用内置搜索：不需要任何配置就能联网
+        kind: if kind.is_empty() { "builtin".into() } else { kind },
         base_url: get("web.base_url")?,
         has_key: !api_key.is_empty(),
         api_key,
@@ -52,7 +53,7 @@ pub fn settings(c: &Connection) -> Result<WebSettings> {
 
 pub fn save_settings(c: &Connection, input: WebSettingsInput) -> Result<WebSettings> {
     let kind = input.kind.trim();
-    if !matches!(kind, "none" | "searxng" | "tavily" | "bocha") {
+    if !matches!(kind, "builtin" | "none" | "searxng" | "tavily" | "bocha") {
         return Err(Error::Invalid("kind".into()));
     }
     let base_url = input.base_url.trim().trim_end_matches('/');
@@ -83,9 +84,17 @@ pub struct WebResult {
 #[derive(Clone)]
 pub struct WebClient {
     http: reqwest::Client,
+    /// 取搜索结果用：允许跟随少量跳转（必应会按地区在 www 和 cn 之间跳转）。
+    http_follow: reqwest::Client,
+    /// 内置搜索向这个地址取结果。测试里指向假服务。
+    pub bing_base: String,
     /// 允许读取本机和内网地址上的网页。只在测试里打开。
     pub allow_private: bool,
 }
+
+/// 向搜索引擎取结果时用的浏览器标识。
+const BROWSER_UA: &str =
+    "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/126.0 Safari/537.36";
 
 /// 读取网页正文时的限制。
 const PAGE_LIMIT: usize = 1_500_000;
@@ -110,7 +119,13 @@ impl WebClient {
             .user_agent("Mozilla/5.0 (compatible; CommonBot)")
             .build()
             .expect("http client");
-        Self { http, allow_private }
+        let http_follow = reqwest::Client::builder()
+            .connect_timeout(Duration::from_secs(5))
+            .redirect(reqwest::redirect::Policy::limited(3))
+            .user_agent(BROWSER_UA)
+            .build()
+            .expect("http client");
+        Self { http, http_follow, allow_private, bing_base: "https://www.bing.com".into() }
     }
 
     /// 搜索，返回最多 `limit` 条结果。
@@ -120,6 +135,7 @@ impl WebClient {
             return Ok(Vec::new());
         }
         let mut results = match s.kind.as_str() {
+            "builtin" => self.builtin(query).await?,
             "searxng" => self.searxng(s, query).await?,
             "tavily" => self.tavily(s, query, limit).await?,
             "bocha" => self.bocha(s, query, limit).await?,
@@ -138,6 +154,46 @@ impl WebClient {
         }
         results.iter_mut().for_each(|r| r.text = r.text.chars().take(EXCERPT_CHARS).collect());
         Ok(results)
+    }
+
+    /// 内置搜索：直接向必应取结果，不经过任何中间服务，也不需要密钥。
+    /// 先取它的 RSS 输出（结构简单稳定）；取不到再解析网页版。
+    /// 搜索引擎对程序发出的请求有时会返回不相干的内容，所以结果要过一道相关性检查。
+    async fn builtin(&self, query: &str) -> Result<Vec<WebResult>> {
+        let fetch = |extra: &'static str| {
+            let url = format!("{}/search", self.bing_base.trim_end_matches('/'));
+            let mut req = self.http_follow.get(url).query(&[("q", query)]);
+            if !extra.is_empty() {
+                req = req.query(&[("format", extra)]);
+            }
+            async move {
+                let resp = req
+                    .header("Accept-Language", "zh-CN,zh;q=0.9,en;q=0.8")
+                    .timeout(Duration::from_secs(15))
+                    .send()
+                    .await
+                    .map_err(upstream)?;
+                if !resp.status().is_success() {
+                    return Err(upstream(format!("HTTP {}", resp.status().as_u16())));
+                }
+                let bytes = resp.bytes().await.map_err(upstream)?;
+                Ok::<String, Error>(String::from_utf8_lossy(&bytes[..bytes.len().min(PAGE_LIMIT)]).into_owned())
+            }
+        };
+        let mut results = match fetch("rss").await {
+            Ok(xml) => parse_bing_rss(&xml),
+            Err(_) => Vec::new(),
+        };
+        if results.is_empty() {
+            results = parse_bing_html(&fetch("").await?);
+        }
+        let found = results.len();
+        let relevant = keep_relevant(results, query);
+        if found > 0 && relevant.is_empty() {
+            // 搜到了东西但全都不相干：当作这次没搜成，比把无关内容交给模型好
+            return Err(Error::Web("web_irrelevant", String::new()));
+        }
+        Ok(relevant)
     }
 
     async fn json(&self, req: reqwest::RequestBuilder) -> Result<Value> {
@@ -247,6 +303,139 @@ impl WebClient {
     }
 }
 
+/// 把 HTML/XML 里的转义字符还原。
+fn unescape(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    let mut rest = s;
+    while let Some(i) = rest.find('&') {
+        out.push_str(&rest[..i]);
+        rest = &rest[i..];
+        // 按字节找分号：& 后面可能紧跟中文，按固定字节数截取字符串会切在半个字上
+        let Some(end) = rest.as_bytes().iter().take(12).position(|&b| b == b';') else {
+            out.push('&');
+            rest = &rest[1..];
+            continue;
+        };
+        let name = &rest[1..end];
+        let ch = match name {
+            "amp" => Some('&'),
+            "lt" => Some('<'),
+            "gt" => Some('>'),
+            "quot" => Some('"'),
+            "apos" => Some('\''),
+            "nbsp" | "ensp" | "emsp" => Some(' '),
+            _ => name
+                .strip_prefix('#')
+                .and_then(|n| match n.strip_prefix(['x', 'X']) {
+                    Some(hex) => u32::from_str_radix(hex, 16).ok(),
+                    None => n.parse().ok(),
+                })
+                .and_then(char::from_u32),
+        };
+        match ch {
+            Some(c) => {
+                out.push(c);
+                rest = &rest[end + 1..];
+            }
+            None => {
+                out.push('&');
+                rest = &rest[1..];
+            }
+        }
+    }
+    out.push_str(rest);
+    out
+}
+
+/// 去掉标签，只留文字。
+fn text_only(html: &str) -> String {
+    let mut out = String::new();
+    let mut in_tag = false;
+    for c in html.chars() {
+        match c {
+            '<' => in_tag = true,
+            '>' => in_tag = false,
+            _ if !in_tag => out.push(c),
+            _ => {}
+        }
+    }
+    unescape(&out).split_whitespace().collect::<Vec<_>>().join(" ")
+}
+
+fn between<'a>(s: &'a str, start: &str, end: &str) -> Option<&'a str> {
+    let i = s.find(start)? + start.len();
+    let j = s[i..].find(end)?;
+    Some(&s[i..i + j])
+}
+
+/// 必应网页版里的结果链接有时是跳转地址（`/ck/a?...&u=a1<base64>`），还原成真正的网址。
+fn bing_target(href: &str) -> String {
+    use base64::Engine as _;
+    let href = unescape(href);
+    if !href.contains("bing.com/ck/a") {
+        return href;
+    }
+    href.split(['?', '&'])
+        .find_map(|kv| kv.strip_prefix("u=a1"))
+        .and_then(|b64| base64::engine::general_purpose::URL_SAFE_NO_PAD.decode(b64.trim_end_matches('=')).ok())
+        .and_then(|bytes| String::from_utf8(bytes).ok())
+        .filter(|u| u.starts_with("http://") || u.starts_with("https://"))
+        .unwrap_or_default()
+}
+
+/// 解析必应的 RSS 输出。
+pub fn parse_bing_rss(xml: &str) -> Vec<WebResult> {
+    xml.split("<item>")
+        .skip(1)
+        .filter_map(|item| {
+            let item = item.split("</item>").next()?;
+            let url = unescape(between(item, "<link>", "</link>")?.trim());
+            (url.starts_with("http://") || url.starts_with("https://")).then(|| WebResult {
+                title: text_only(between(item, "<title>", "</title>").unwrap_or("")),
+                url,
+                text: text_only(between(item, "<description>", "</description>").unwrap_or("")),
+            })
+        })
+        .collect()
+}
+
+/// 解析必应的网页版结果页。
+pub fn parse_bing_html(html: &str) -> Vec<WebResult> {
+    html.split("class=\"b_algo\"")
+        .skip(1)
+        .filter_map(|block| {
+            let block = block.split("</li>").next()?;
+            let h2 = between(block, "<h2", "</h2>")?;
+            let url = bing_target(between(h2, "href=\"", "\"")?);
+            if url.is_empty() {
+                return None;
+            }
+            let title = text_only(&h2[h2.find('>')? + 1..]);
+            let text = block
+                .find("b_caption")
+                .and_then(|i| {
+                    let caption = &block[i..];
+                    let p = &caption[caption.find("<p")?..];
+                    Some(text_only(&p[..p.find("</p>")?]))
+                })
+                .unwrap_or_default();
+            Some(WebResult { title, url, text })
+        })
+        .collect()
+}
+
+/// 只留下与问题至少有一个词对得上的结果。
+pub fn keep_relevant(results: Vec<WebResult>, query: &str) -> Vec<WebResult> {
+    let wanted: std::collections::HashSet<String> = tokens(query).into_iter().collect();
+    if wanted.is_empty() {
+        return results;
+    }
+    results
+        .into_iter()
+        .filter(|r| tokens(&format!("{} {}", r.title, r.text)).iter().any(|t| wanted.contains(t)))
+        .collect()
+}
+
 /// 地址是否在公网上。域名解析出的每一个地址都要是公网地址才算。
 async fn is_public_host(url: &reqwest::Url) -> bool {
     let Some(host) = url.host_str() else { return false };
@@ -333,6 +522,65 @@ pub fn best_passages(text: &str, query: &str, budget: usize) -> String {
 mod tests {
     use super::*;
 
+    fn sample(name: &str) -> String {
+        std::fs::read_to_string(std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/fixtures").join(name))
+            .unwrap()
+    }
+
+    #[test]
+    fn parses_real_bing_rss() {
+        let r = parse_bing_rss(&sample("bing.rss.xml"));
+        assert_eq!(r.len(), 3);
+        assert_eq!(r[1].url, "https://github.com/tokio-rs/axum");
+        assert!(r[1].title.starts_with("GitHub - tokio-rs/axum"));
+        assert!(r[1].text.contains("HTTP routing and request-handling library"));
+        assert!(parse_bing_rss("<rss><channel></channel></rss>").is_empty());
+        assert!(parse_bing_rss("not xml at all").is_empty());
+    }
+
+    #[test]
+    fn parses_real_bing_page_and_resolves_redirect_links() {
+        let r = parse_bing_html(&sample("bing.html"));
+        assert_eq!(r.len(), 4, "{r:?}");
+        // 跳转地址被还原成真正的网址
+        assert_eq!(r[0].url, "https://en.wikipedia.org/wiki/Axum");
+        assert_eq!(r[1].url, "https://github.com/tokio-rs/axum");
+        assert!(r.iter().all(|x| !x.url.contains("bing.com/ck/")));
+        // 直接给出网址的结果、中文标题里的强调标签和转义字符
+        assert_eq!(r[3].url, "https://smart.mail.163.com/login.htm");
+        assert_eq!(r[3].title, "网易163免费邮箱登录");
+        assert!(
+            r[3].text.contains("@163.com") && !r[3].text.contains('<') && !r[3].text.contains("&ensp;"),
+            "{}",
+            r[3].text
+        );
+        assert!(parse_bing_html("<html><body>captcha</body></html>").is_empty());
+    }
+
+    #[test]
+    fn drops_results_that_share_no_word_with_the_question() {
+        let r = |title: &str, text: &str| WebResult { title: title.into(), url: "https://x".into(), text: text.into() };
+        let kept = keep_relevant(
+            vec![r("家电延保新规", "延保价格调整"), r("洛丹伦瘟疫爆发之前", "是谁变成了巫妖王")],
+            "家电延保政策",
+        );
+        assert_eq!(kept.len(), 1);
+        assert_eq!(kept[0].title, "家电延保新规");
+        assert_eq!(keep_relevant(vec![r("anything", "")], "，。").len(), 1, "nothing to compare against: keep");
+    }
+
+    #[test]
+    fn unescapes_entities() {
+        assert_eq!(
+            unescape("A &amp; B &lt;c&gt; &#20013;&#x6587; &unknown; 100% & done"),
+            "A & B <c> 中文 &unknown; 100% & done"
+        );
+        assert_eq!(text_only("<b>粗</b>体&nbsp;<i>字</i>\n  换行"), "粗体 字 换行");
+        // & 后面紧跟多字节文字
+        assert_eq!(unescape("研发&测试部门；A&B"), "研发&测试部门；A&B");
+        assert_eq!(unescape("末尾&"), "末尾&");
+    }
+
     #[test]
     fn refuses_local_and_private_addresses() {
         for ip in [
@@ -371,7 +619,7 @@ mod tests {
     async fn settings_round_trip_and_keep_the_key_secret() {
         let db = crate::Db::open_in_memory().unwrap();
         db.run(|c| {
-            assert_eq!(settings(c)?.kind, "none");
+            assert_eq!(settings(c)?.kind, "builtin", "works out of the box with the built-in search");
             let bad = WebSettingsInput { kind: "searxng".into(), base_url: "not a url".into(), ..Default::default() };
             assert!(matches!(save_settings(c, bad), Err(Error::Invalid(f)) if f == "base_url"));
             assert!(save_settings(c, WebSettingsInput { kind: "other".into(), ..Default::default() }).is_err());

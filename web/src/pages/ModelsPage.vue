@@ -43,7 +43,7 @@ async function saveKb() {
   }
 }
 // 联网搜索
-const webForm = reactive({ kind: "none", base_url: "", api_key: "", fetch_pages: false, has_key: false });
+const webForm = reactive({ kind: "builtin", base_url: "", api_key: "", fetch_pages: false, has_key: false });
 const webMsg = ref<{ ok: boolean; text: string } | null>(null);
 const webBusy = ref(false);
 onMounted(async () => {
@@ -179,8 +179,9 @@ async function remove(id: string) {
     <label class="field">
       <span>{{ $t("web.kind") }}</span>
       <select v-model="webForm.kind" @change="webForm.kind === 'searxng' && !webForm.base_url ? (webMsg = null) : saveWeb()">
-        <option v-for="k in ['none', 'searxng', 'tavily', 'bocha']" :key="k" :value="k">{{ $t(`web.${k}`) }}</option>
+        <option v-for="k in ['builtin', 'none', 'searxng', 'tavily', 'bocha']" :key="k" :value="k">{{ $t(`web.${k}`) }}</option>
       </select>
+      <span v-if="webForm.kind === 'builtin'">{{ $t("web.builtinHint") }}</span>
     </label>
     <label v-if="webForm.kind === 'searxng'" class="field"><span>{{ $t("web.baseUrl") }}</span><input v-model="webForm.base_url" type="text" placeholder="http://127.0.0.1:8888" spellcheck="false" autocapitalize="off" /></label>
     <label v-if="webForm.kind === 'tavily' || webForm.kind === 'bocha'" class="field"><span>{{ $t("models.apiKey") }}</span><input v-model="webForm.api_key" type="password" autocomplete="off" :placeholder="webForm.has_key ? $t('models.apiKeyKeep') : ''" /></label>

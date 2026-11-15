@@ -111,6 +111,9 @@ const messages: typeof zh = {
     saved: "已儲存",
   },
   web: {
+    noteIrrelevant: "這次沒有連網結果：搜尋引擎傳回的內容與問題不相干，已捨棄。",
+    builtinHint: "直接向 Bing 取得搜尋結果，不經過其他服務，也不需要金鑰。搜尋引擎偶爾會對程式傳回不相干的內容，這類結果會被自動捨棄。",
+    builtin: "內建搜尋（不需要任何設定）",
     chip: "連網",
     title: "連網搜尋",
     subtitle: "智慧體需要連網時用它來搜尋。不設定則不連網，其餘功能照常。",
@@ -294,6 +297,7 @@ const messages: typeof zh = {
     enter: "進入",
   },
   errors: {
+    web_irrelevant: "搜尋引擎傳回的內容與問題不相干。可以換個說法再試，或在「模型」頁改用別的搜尋服務",
     invalid_publish_needs_model: "發布前需要先固定一個模型",
     invalid_draft_incomplete: "草稿還缺名稱或負責的任務",
     tests_unreadable: "沒能產生試答題，請再試一次或換一個模型",

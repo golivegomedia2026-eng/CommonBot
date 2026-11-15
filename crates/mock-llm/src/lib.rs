@@ -206,6 +206,28 @@ async fn search(headers: HeaderMap, Query(q): Query<std::collections::HashMap<St
         return (StatusCode::INTERNAL_SERVER_ERROR, "boom").into_response();
     }
     let host = headers.get("host").and_then(|v| v.to_str().ok()).unwrap_or("127.0.0.1");
+    // 充当必应：format=rss 时返回 RSS；不带 format 时返回网页版（只在问题里写了「只有网页版」时 RSS 才为空）
+    match q.get("format").map(String::as_str) {
+        Some("json") => {}
+        Some("rss") => {
+            let items = if query.contains("只有网页版") {
+                String::new()
+            } else if query.contains("不相干") {
+                "<item><title>洛丹伦瘟疫</title><link>https://example.com/x</link><description>巫妖王</description></item>".to_string()
+            } else {
+                format!("<item><title>内置搜索：{query}</title><link>http://{host}/page/1</link><description>关于 {query} 的结果 &amp; 摘要</description></item>")
+            };
+            return (
+                [("content-type", "text/xml")],
+                format!("<?xml version=\"1.0\"?><rss><channel>{items}</channel></rss>"),
+            )
+                .into_response();
+        }
+        _ => {
+            let html = format!("<ol><li class=\"b_algo\"><h2><a href=\"http://{host}/page/2\">网页版结果：<strong>{query}</strong></a></h2><div class=\"b_caption\"><p>网页版摘要 {query}</p></div></li></ol>");
+            return ([("content-type", "text/html; charset=utf-8")], html).into_response();
+        }
+    }
     Json(json!({ "results": [
         { "title": "延保政策公告", "url": format!("http://{host}/page/1"), "content": format!("摘要：关于「{query}」的最新公告。") },
         { "title": "行业新闻", "url": format!("http://{host}/page/2"), "content": "摘要：本周行业动态汇总。" },

@@ -754,6 +754,44 @@ fn sources_of(events: &[(String, Value)]) -> Option<Value> {
     events.iter().find(|(n, _)| n == "sources").map(|(_, d)| d.clone())
 }
 
+#[tokio::test]
+async fn built_in_search_needs_no_setup() {
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let site = base.trim_end_matches("/v1").to_string();
+    let db = Db::open_in_memory().unwrap();
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let mut state = AppState::new(db, "0.0.0.0:8600".parse().unwrap(), dir, None).await.unwrap();
+    state.web.bing_base = site.clone(); // 测试里由假服务充当搜索引擎
+    let app = app(state);
+    let pid = add_provider(&app, &base, None).await;
+
+    // 没做任何设置：默认就是内置搜索
+    assert_eq!(req(Method::GET, "/api/settings/web").send(&app).await.json()["kind"], "builtin");
+    let events =
+        ask_agent(&app, "general", json!({ "content": "家电延保政策", "provider_id": pid, "web": true })).await;
+    let s = sources_of(&events).unwrap();
+    assert_eq!(s["web_note"], Value::Null);
+    assert_eq!(s["sources"][0]["title"], "内置搜索：家电延保政策");
+    assert_eq!(s["sources"][0]["text"], "关于 家电延保政策 的结果 & 摘要");
+
+    // RSS 取不到结果时改用网页版
+    let events =
+        ask_agent(&app, "general", json!({ "content": "只有网页版 延保", "provider_id": pid, "web": true })).await;
+    let s = sources_of(&events).unwrap();
+    assert_eq!(s["sources"][0]["title"], "网页版结果：只有网页版 延保");
+    assert_eq!(s["sources"][0]["url"], format!("{site}/page/2"));
+
+    // 搜索引擎给的全是不相干的内容：不交给模型，说明这次没搜成，问答照常
+    let events =
+        ask_agent(&app, "general", json!({ "content": "不相干 的结果", "provider_id": pid, "web": true })).await;
+    let s = sources_of(&events).unwrap();
+    assert_eq!((s["sources"].clone(), s["web_note"].clone()), (json!([]), json!("web_irrelevant")));
+    assert_eq!(events.last().unwrap().0, "done");
+
+    let test = req(Method::POST, "/api/settings/web/test").json(json!({ "query": "延保" })).send(&app).await.json();
+    assert_eq!(test["results"].as_array().unwrap().len(), 1);
+}
+
 async fn setup_with(allow_private_pages: bool) -> Router {
     let db = Db::open_in_memory().unwrap();
     let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
@@ -777,7 +815,8 @@ async fn web_search_modes() {
         StatusCode::BAD_REQUEST
     );
 
-    // 还没配置搜索服务：照常回答，并说明这次没联网
+    // 关掉联网搜索：照常回答，并说明这次没联网
+    req(Method::PUT, "/api/settings/web").json(json!({ "kind": "none" })).send(&app).await;
     let events = ask_agent(&app, wid, json!({ "content": "延保政策有什么变化", "provider_id": pid })).await;
     let s = sources_of(&events).unwrap();
     assert_eq!((s["sources"].clone(), s["web_note"].clone()), (json!([]), json!("web_not_configured")));

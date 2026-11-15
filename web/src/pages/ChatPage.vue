@@ -89,7 +89,12 @@ watch(currentId, (id) => {
   histOpen.value = false;
   rejected.value = [];
   webNote.value = "";
-  if (id && id === justCreated) return;
+  if (id && id === justCreated) {
+    // 这次路由变化是「发消息时新建了对话」引起的，内容已经在页面上，不用重新读取。
+    // 标记只用一次：之后从别的对话切回来时要照常读取（否则切不回这个新对话）。
+    justCreated = "";
+    return;
+  }
   abort?.abort();
   void open(id);
 });
@@ -183,7 +188,7 @@ async function send(text?: string) {
           conversations.value.unshift(e.conversation);
         } else if (e.type === "sources") {
           live.sources = e.sources;
-          live.webNote = e.web_note === "web_not_configured" ? "web.noteNotConfigured" : e.web_note ? "web.noteFailed" : "";
+          live.webNote = e.web_note === "web_not_configured" ? "web.noteNotConfigured" : e.web_note === "web_irrelevant" ? "web.noteIrrelevant" : e.web_note ? "web.noteFailed" : "";
         } else if (e.type === "fallback") {
           live.fallback = e.model;
         } else if (e.type === "delta") {

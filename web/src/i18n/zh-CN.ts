@@ -109,6 +109,9 @@ export default {
     saved: "已保存",
   },
   web: {
+    noteIrrelevant: "这次没有联网结果：搜索引擎返回的内容与问题不相干，已丢弃。",
+    builtinHint: "直接向必应取搜索结果，不经过其他服务，也不需要密钥。搜索引擎偶尔会给程序返回不相干的内容，这类结果会被自动丢弃。",
+    builtin: "内置搜索（不需要任何设置）",
     chip: "联网",
     title: "联网搜索",
     subtitle: "智能体需要联网时用它来搜索。不配置则不联网，其余功能照常。",
@@ -292,6 +295,7 @@ export default {
     enter: "进入",
   },
   errors: {
+    web_irrelevant: "搜索引擎返回的内容与问题不相干。可以换个说法再试，或在「模型」页改用别的搜索服务",
     invalid_publish_needs_model: "发布前需要先固定一个模型",
     invalid_draft_incomplete: "草稿还缺名称或负责的任务",
     tests_unreadable: "没能生成试答题，请再试一次或换一个模型",

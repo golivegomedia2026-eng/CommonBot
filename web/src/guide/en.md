@@ -55,7 +55,7 @@ Open the Models page:
 
 1. The inference services are listed at the top. Each should show OK and a model count. If one can't be reached, check that it is running and the address is right.
 2. Under “Models for the knowledge base”, choose an embedding model and a text recognition model (skip them if you have none yet).
-3. For web search, choose a search service under “Web search” and click “Try a search”.
+3. Web search uses the built-in search by default and needs no setup; click “Try a search” to confirm this machine's network returns results. You can switch to a self-hosted SearXNG or a keyed search API instead.
 4. For a fallback when the local model is unavailable, use “Add inference service”, set the type to Cloud, and fill in the address, key and default model.
 
 ## 4. Agents

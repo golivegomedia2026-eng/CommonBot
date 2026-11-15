@@ -105,6 +105,17 @@ const check = (name, ok, detail = "") => {
   const fileSources = await lastSources();
   check("uploaded file is used and labelled", fileSources[0] === "本次上传", fileSources.join(" | "));
   await shot("chat-files");
+  // 新对话 → 切到原来的对话 → 再切回新对话
+  await p.click(".page-head a.btn.primary");
+  await p.waitForFunction(() => document.querySelectorAll(".msg.me").length === 0);
+  await ask("这是第二个对话");
+  await p.click('.hist .h:has-text("屏幕坏了还能保修吗")');
+  await p.waitForFunction(() => document.querySelectorAll(".msg").length === 6);
+  await p.click('.hist .h:has-text("这是第二个对话")');
+  await p.waitForFunction(() => document.querySelectorAll(".msg").length === 2, null, { timeout: 5000 }).catch(() => {});
+  check("can switch back to the new conversation", (await p.locator(".msg").count()) === 2 && (await p.textContent(".msg.me")).includes("这是第二个对话"));
+  await p.click('.hist .h:has-text("屏幕坏了还能保修吗")');
+  await p.waitForFunction(() => document.querySelectorAll(".msg").length === 6);
   await p.reload();
   await p.waitForSelector(".msg.me .att");
   check("conversation survives a reload", (await p.locator(".msg").count()) === 6);
