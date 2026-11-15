@@ -157,6 +157,16 @@ export interface Message {
   cloud: boolean;
   created_at: number;
 }
+export interface UpdateStatus {
+  state: "disabled" | "unknown" | "up_to_date" | "optional" | "required";
+  current: string;
+  latest: string | null;
+  minimum: string | null;
+  notes: string;
+  url: string;
+  auto: boolean;
+  failed: boolean;
+}
 export interface Health {
   name: string;
   version: string;
@@ -211,6 +221,9 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
 
 export const api = {
   health: () => call<Health>("GET", "/health"),
+  update: () => call<UpdateStatus>("GET", "/update"),
+  checkUpdate: () => call<UpdateStatus>("POST", "/update/check"),
+  setAutoUpdate: (enabled: boolean) => call<UpdateStatus>("PUT", "/update/auto", { enabled }),
   system: () => call<{ version: string; lan: boolean; lan_fixed: boolean; port: number; addresses: string[] }>("GET", "/system"),
   setLan: (enabled: boolean) => call<{ lan: boolean }>("PUT", "/system/lan", { enabled }),
   enterAccessCode: (code: string) => call<{ ok: boolean }>("POST", "/access", { code }),

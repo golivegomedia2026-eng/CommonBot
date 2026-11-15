@@ -1,7 +1,7 @@
 // 各页面共用的状态：服务信息、推理服务及其检测结果、当前选用的模型。
 import { reactive } from "vue";
 
-import { api, type Folder, type Health, kb, type Provider } from "./api";
+import { api, type Folder, type Health, kb, type Provider, type UpdateStatus } from "./api";
 import { errorText } from "./i18n";
 
 export interface Check {
@@ -17,6 +17,7 @@ export const state = reactive({
   providersLoaded: false,
   checks: {} as Record<string, Check>,
   selection: { providerId: "", model: "" },
+  update: null as UpdateStatus | null,
   folders: [] as Folder[],
   foldersLoaded: false,
 });

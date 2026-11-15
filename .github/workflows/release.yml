@@ -1,0 +1,155 @@
+name: Release
+
+# 手动触发：各平台从同一个提交构建离线包，汇总后建一个草稿发行版；勾选 publish 才公开。
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: "版本号（要与 Cargo.toml、web/package.json 一致），如 0.1.0"
+        required: true
+      notes:
+        description: "更新说明（显示在升级提示里）"
+        default: ""
+      force:
+        description: "强制升级：低于这个版本的都必须升级"
+        type: boolean
+        default: false
+      publish:
+        description: "构建成功后直接公开（不勾选则留作草稿）"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+concurrency:
+  group: release
+  cancel-in-progress: false
+
+jobs:
+  build:
+    strategy:
+      fail-fast: true
+      matrix:
+        # Spark（Linux ARM64）、Mac（Apple Silicon）、Linux x64
+        os: [ubuntu-24.04-arm, macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Version must match the sources
+        run: |
+          cargo_version=$(sed -n 's/^version = "\(.*\)"/\1/p' Cargo.toml | head -1)
+          web_version=$(sed -n 's/^  "version": "\(.*\)",/\1/p' web/package.json | head -1)
+          if [ "$cargo_version" != "${{ inputs.version }}" ] || [ "$web_version" != "${{ inputs.version }}" ]; then
+            echo "::error::version input ${{ inputs.version }} does not match Cargo.toml ($cargo_version) / web/package.json ($web_version)"
+            exit 1
+          fi
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+          cache-dependency-path: web/pnpm-lock.yaml
+      - name: Fetch bundled runtime libraries (PDF engine)
+        run: scripts/fetch-vendor.sh
+      - name: Interface — install, test, build
+        run: |
+          pnpm --dir web install --frozen-lockfile
+          pnpm --dir web test
+          pnpm --dir web build
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --locked --workspace
+      - run: cargo build --locked --release -p commonbot-server
+      - name: Package
+        run: scripts/package.sh
+      - name: Smoke-test the package from a clean directory
+        run: |
+          work=$(mktemp -d)
+          tar -C "$work" -xzf dist/commonbot-*.tar.gz
+          cd "$work"/commonbot-*
+          COMMONBOT_DATA_DIR="$work/data" ./commonbot --port 8699 &
+          pid=$!
+          for i in $(seq 1 20); do curl -sf http://127.0.0.1:8699/api/health > /dev/null && break; sleep 0.5; done
+          curl -sf http://127.0.0.1:8699/api/health | grep -q '"version":"${{ inputs.version }}"'
+          curl -sf http://127.0.0.1:8699/api/kb/settings | grep -q '"pdf_engine":true'
+          curl -sf http://127.0.0.1:8699/ | grep -q 'assets/index-'
+          kill $pid
+      - uses: actions/upload-artifact@v4
+        with:
+          name: package-${{ matrix.os }}
+          path: |
+            dist/*.tar.gz
+            dist/*.sha256
+          if-no-files-found: error
+
+  release:
+    needs: build
+    runs-on: ubuntu-latest
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: v${{ inputs.version }}
+      COMMONBOT_SIGNING_KEY: ${{ secrets.COMMONBOT_SIGNING_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+      - name: All three packages must be present
+        run: |
+          ls -l dist
+          for p in linux-arm64 mac-arm64 linux-x64; do
+            test -f "dist/commonbot-${{ inputs.version }}-$p.tar.gz" || { echo "::error::missing package for $p"; exit 1; }
+          done
+          (cd dist && sha256sum -c *.sha256)
+      - name: Refuse to overwrite a published release
+        run: |
+          if gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null | grep -q false; then
+            echo "::error::$TAG is already published. Release a new version instead."
+            exit 1
+          fi
+      - name: Version policy (what the upgrade check reads)
+        run: |
+          minimum=$(sed -n 's/.*"minimum": *"\([^"]*\)".*/\1/p' update-policy.json)
+          if [ "${{ inputs.force }}" = "true" ]; then minimum="${{ inputs.version }}"; fi
+          python3 - "$minimum" <<'PY'
+          import json, sys, os, datetime
+          json.dump({
+              "version": "${{ inputs.version }}",
+              "minimum": sys.argv[1],
+              "notes": os.environ.get("NOTES", ""),
+              "pub_date": datetime.datetime.now(datetime.timezone.utc).isoformat(timespec="seconds"),
+              "url": "https://github.com/${{ github.repository }}/releases/tag/" + os.environ["TAG"],
+          }, open("dist/policy.json", "w"), ensure_ascii=False)
+          PY
+          cat dist/policy.json
+        env:
+          NOTES: ${{ inputs.notes }}
+      - name: Sign the policy
+        run: |
+          if [ -z "$COMMONBOT_SIGNING_KEY" ] || [ ! -f packaging/update.pub ]; then
+            echo "::warning::No signing key (secret COMMONBOT_SIGNING_KEY) or no packaging/update.pub: this release has NO upgrade check. See docs/RELEASE.md."
+            rm dist/policy.json
+            exit 0
+          fi
+          cargo run --locked -q -p commonbot-sign -- sign dist/policy.json
+          # 签名用的私钥必须和编进程序的公钥是一对，否则客户端验不过
+          signed_with=$(cargo run --locked -q -p commonbot-sign -- sign dist/policy.json | sed -n 's/.*public key \(.*\))/\1/p')
+          test "$signed_with" = "$(tr -d '[:space:]' < packaging/update.pub)" || { echo "::error::signing key does not match packaging/update.pub"; exit 1; }
+      - name: Checksums
+        run: cd dist && rm -f *.sha256 && sha256sum * > SHA256SUMS && cat SHA256SUMS
+      - name: Create or reuse the draft, upload everything
+        run: |
+          gh release view "$TAG" > /dev/null 2>&1 || gh release create "$TAG" --draft --target "$GITHUB_SHA" --title "CommonBot ${{ inputs.version }}" --notes "${NOTES:-CommonBot ${{ inputs.version }}}"
+          gh release upload "$TAG" dist/* --clobber
+        env:
+          NOTES: ${{ inputs.notes }}
+      - name: Publish
+        if: ${{ inputs.publish }}
+        run: |
+          gh release edit "$TAG" --draft=false
+          # 公开后重新下载核对
+          mkdir check && cd check && gh release download "$TAG" && sha256sum -c SHA256SUMS

@@ -8,6 +8,7 @@ pub mod error;
 pub mod kb;
 pub mod llm;
 pub mod store;
+pub mod update;
 pub mod web;
 
 pub use db::Db;

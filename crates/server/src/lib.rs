@@ -7,6 +7,7 @@ mod chat;
 mod published;
 mod routes;
 mod routes_kb;
+pub mod updater;
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
@@ -39,6 +40,8 @@ pub struct AppState {
     pub ingestor: Arc<Ingestor>,
     /// 联网搜索。
     pub web: commonbot_core::web::WebClient,
+    /// 升级检查。
+    pub updater: Arc<updater::Updater>,
     pub(crate) access_token: Arc<RwLock<String>>,
     pub(crate) access_failures: Arc<Mutex<access::Failures>>,
 }
@@ -59,6 +62,7 @@ impl AppState {
         Ok(Self {
             retriever: Retriever { db: db.clone(), llm: llm.clone(), index },
             ingestor,
+            updater: Arc::new(updater::Updater::from_build()),
             // 读取网页时默认拒绝本机和内网地址；只有测试会放开
             web: commonbot_core::web::WebClient::new(
                 std::env::var("COMMONBOT_WEB_ALLOW_PRIVATE").is_ok_and(|v| v == "1"),

@@ -4,6 +4,12 @@
 use std::path::Path;
 
 fn main() {
+    // 升级签名的公钥：有 packaging/update.pub 时编进程序；没有时这个构建不带升级检查
+    let pubkey_file = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../packaging/update.pub");
+    println!("cargo:rerun-if-changed={}", pubkey_file.display());
+    let pubkey = std::fs::read_to_string(&pubkey_file).unwrap_or_default();
+    println!("cargo:rustc-env=COMMONBOT_UPDATE_PUBKEY={}", pubkey.trim());
+
     let dist = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../web/dist");
     println!("cargo:rerun-if-changed={}", dist.display());
     let index = dist.join("index.html");

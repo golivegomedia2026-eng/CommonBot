@@ -16,6 +16,7 @@ clap = { version = "4", features = ["derive", "env"] }
 commonbot-core = { path = "../core" }
 dirs = "5"
 futures.workspace = true
+reqwest.workspace = true
 if-addrs = "0.15.0"
 mime_guess = "2"
 rust-embed = "8"
@@ -29,4 +30,5 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 [dev-dependencies]
 commonbot-mock-llm = { path = "../mock-llm" }
 http-body-util = "0.1"
+minisign = "0.7"
 tower = { version = "0.5", features = ["util"] }

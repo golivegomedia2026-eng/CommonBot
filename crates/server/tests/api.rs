@@ -1350,3 +1350,80 @@ async fn lan_switch_is_local_only_and_respects_a_fixed_address() {
     r.cookie = Some(&cookie);
     assert_eq!(r.send(&app).await.json()["code"], "local_only");
 }
+
+// ---------- 升级 ----------
+
+fn signed_policy(kp: &minisign::KeyPair, version: &str, minimum: &str) -> (Vec<u8>, String) {
+    let json = json!({ "version": version, "minimum": minimum, "notes": "修复了若干问题", "url": "https://example.com/release" }).to_string().into_bytes();
+    let sig = minisign::sign(Some(&kp.pk), &kp.sk, std::io::Cursor::new(&json), None, None).unwrap().into_string();
+    (json, sig)
+}
+
+async fn app_with_updater(base: &str, pubkey: &str) -> Router {
+    let db = Db::open_in_memory().unwrap();
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let mut state = AppState::new(db, "0.0.0.0:8600".parse().unwrap(), dir, None).await.unwrap();
+    state.updater = std::sync::Arc::new(commonbot_server::updater::Updater::new(base, pubkey));
+    app(state)
+}
+
+#[tokio::test]
+async fn upgrade_is_required_only_on_a_verified_policy() {
+    let kp = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    let pk = kp.pk.to_base64();
+    let serve = |policy: Option<(Vec<u8>, String)>| async move {
+        let base = commonbot_mock_llm::spawn(MockConfig { policy, ..Default::default() }).await;
+        format!("{}/update", base.trim_end_matches("/v1"))
+    };
+
+    // 这个构建没带公钥：升级检查关闭，什么都不会发生
+    let app = app_with_updater(&serve(Some(signed_policy(&kp, "9.0.0", "9.0.0"))).await, "").await;
+    let s = req(Method::POST, "/api/update/check").send(&app).await.json();
+    assert_eq!((s["state"].as_str().unwrap(), s["failed"].clone()), ("disabled", json!(false)));
+
+    // 还没查过：状态未知，不强制
+    let app = app_with_updater(&serve(Some(signed_policy(&kp, "9.0.0", "9.0.0"))).await, &pk).await;
+    assert_eq!(req(Method::GET, "/api/update").send(&app).await.json()["state"], "unknown");
+    // 查到验签通过的策略，最低版本高于当前版本：必须升级
+    let s = req(Method::POST, "/api/update/check").send(&app).await.json();
+    assert_eq!(
+        (s["state"].as_str().unwrap(), s["latest"].as_str().unwrap(), s["notes"].as_str().unwrap()),
+        ("required", "9.0.0", "修复了若干问题")
+    );
+    assert_eq!(s["url"], "https://example.com/release");
+    // 之后不联网也记得
+    assert_eq!(req(Method::GET, "/api/update").send(&app).await.json()["state"], "required");
+
+    // 只是有新版本：可选
+    let app = app_with_updater(&serve(Some(signed_policy(&kp, "9.0.0", "0.0.1"))).await, &pk).await;
+    assert_eq!(req(Method::POST, "/api/update/check").send(&app).await.json()["state"], "optional");
+    // 已是最新
+    let app = app_with_updater(&serve(Some(signed_policy(&kp, env!("CARGO_PKG_VERSION"), "0.0.1"))).await, &pk).await;
+    assert_eq!(req(Method::POST, "/api/update/check").send(&app).await.json()["state"], "up_to_date");
+
+    // 策略被篡改、用别人的密钥签、发行地址连不上、没有策略文件：都不强制，并说明这次没查成
+    let (json_bytes, sig) = signed_policy(&kp, "9.0.0", "9.0.0");
+    let tampered = String::from_utf8(json_bytes.clone()).unwrap().replace("修复", "篡改").into_bytes();
+    let other = minisign::KeyPair::generate_unencrypted_keypair().unwrap();
+    for base in [
+        serve(Some((tampered, sig.clone()))).await,
+        serve(Some(signed_policy(&other, "9.0.0", "9.0.0"))).await,
+        serve(None).await,
+        "http://127.0.0.1:9/update".to_string(),
+    ] {
+        let app = app_with_updater(&base, &pk).await;
+        let s = req(Method::POST, "/api/update/check").send(&app).await.json();
+        assert_eq!((s["state"].as_str().unwrap(), s["failed"].clone()), ("unknown", json!(true)), "{base}");
+    }
+
+    // 自动检查的开关只能在主机上改
+    let app = app_with_updater("http://127.0.0.1:9/update", &pk).await;
+    assert_eq!(
+        req(Method::PUT, "/api/update/auto").json(json!({ "enabled": false })).send(&app).await.json()["auto"],
+        false
+    );
+    assert_eq!(
+        req(Method::PUT, "/api/update/auto").remote().json(json!({ "enabled": true })).send(&app).await.status,
+        StatusCode::UNAUTHORIZED
+    );
+}

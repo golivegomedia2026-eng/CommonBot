@@ -76,6 +76,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
     let mut state = AppState::new(db.clone(), first, data_dir.clone(), pdfium.clone()).await?;
     state.listen_fixed = args.listen.is_some();
+    if let Ok(base) = std::env::var("COMMONBOT_UPDATE_BASE") {
+        // 只换下载来源；内容仍要用程序里的公钥验签
+        state.updater = std::sync::Arc::new(state.updater.with_base(&base));
+    }
+    state.updater.clone().spawn(db.clone());
     let router = app(state.clone());
 
     println!("CommonBot {VERSION}");

@@ -53,6 +53,27 @@ async function toggleLan() {
   }
 }
 
+const checkingUpdate = ref(false);
+const updateFailed = ref(false);
+async function checkUpdate() {
+  checkingUpdate.value = true;
+  try {
+    state.update = await api.checkUpdate();
+    updateFailed.value = state.update.failed;
+  } catch (e) {
+    error.value = errorText(e);
+  } finally {
+    checkingUpdate.value = false;
+  }
+}
+async function setAuto(enabled: boolean) {
+  try {
+    state.update = await api.setAutoUpdate(enabled);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
+
 async function toggleCode() {
   error.value = "";
   if (shown.value) return void (shown.value = false);
@@ -110,6 +131,24 @@ async function resetCode() {
         </div>
       </template>
       <div v-else class="item"><span class="muted">{{ $t("system.localOnly") }}</span></div>
+      <div class="item">
+        <div class="grow">
+          <b>{{ $t("update.title") }}</b>
+          <div class="muted" aria-live="polite">
+            <template v-if="!state.update || state.update.state === 'disabled'">{{ $t("update.disabled") }}</template>
+            <template v-else-if="state.update.state === 'up_to_date'">✓ {{ $t("update.upToDate") }}</template>
+            <template v-else-if="state.update.state === 'unknown'">{{ $t("update.unknown") }}</template>
+            <template v-else>{{ $t("update.available", { latest: state.update.latest }) }}</template>
+            <template v-if="updateFailed"> · {{ $t("update.failed") }}</template>
+          </div>
+        </div>
+        <a v-if="state.update?.url && (state.update.state === 'optional' || state.update.state === 'required')" class="btn ghost sm" :href="state.update.url" target="_blank" rel="noopener noreferrer">{{ $t("update.download") }}</a>
+        <button class="btn ghost sm" :disabled="checkingUpdate || !state.update || state.update.state === 'disabled'" @click="checkUpdate">{{ checkingUpdate ? $t("update.checking") : $t("update.check") }}</button>
+      </div>
+      <label v-if="state.update && state.update.state !== 'disabled' && state.health?.local" class="item" style="cursor: pointer">
+        <span class="grow">{{ $t("update.auto") }}</span>
+        <input type="checkbox" :checked="state.update.auto" @change="setAuto(($event.target as HTMLInputElement).checked)" />
+      </label>
       <div class="item">
         <div class="grow"><b>{{ $t("system.version") }}</b></div>
         <RouterLink class="btn ghost sm" to="/help">{{ $t("nav.help") }}</RouterLink>

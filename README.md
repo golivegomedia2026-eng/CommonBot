@@ -2,8 +2,10 @@
 
 通用智能体平台：新建智能体并定义职责、为智能体建知识库（可结合联网回答）、通过对话生成新的智能体。主机为 NVIDIA DGX Spark，Rust 实现。
 
-当前阶段：**P4 建造师与发布已完成**——三项基本要求（新建智能体并定义任务、知识库加联网回答、通过对话生成可独立使用的智能体）都已实现；客户端外壳、安装包和语音在后续阶段。
+当前阶段：三项基本要求（新建智能体并定义任务、知识库加联网回答、通过对话生成可独立使用的智能体）都已实现，并能打成解压即用的离线包。桌面外壳、手机客户端和语音还没有做。
 
+- 使用说明：[简体中文](web/src/guide/zh-CN.md) · [繁體中文](web/src/guide/zh-TW.md) · [English](web/src/guide/en.md) · [日本語](web/src/guide/ja.md)（应用里的「使用说明」页是同一份）
+- 发行与升级：[docs/RELEASE.md](docs/RELEASE.md)
 - 方案：[docs/v1/PLAN.md](docs/v1/PLAN.md)
 - 决策：[docs/v1/DECISIONS.md](docs/v1/DECISIONS.md)
 - 进度：[docs/v1/PROGRESS.md](docs/v1/PROGRESS.md)
@@ -11,6 +13,8 @@
 
 ## 现在能做什么
 
+- 离线包：解压即用，含界面、PDF 解析库、使用说明；Linux 可装成开机自启的服务；局域网访问在界面里开关
+- 升级检查：读取签名的版本策略，有新版本时提示，低于最低版本时必须升级（需要先配置签名密钥，见发行说明）
 - 建造师：和它对话，它把访谈整理成智能体的定义（手动改过的字段不会被覆盖），出题试答并评判，确认后发布
 - 发布：每个智能体可以有独立链接（访客不需要访问码，只能用到这一个智能体）和 API 密钥（兼容 OpenAI 的接口，流式和非流式都支持）；可随时取消发布或更换密钥
 - 新建智能体：写清负责什么、不负责什么、开场白和示例问题，可固定使用某个模型；系统提示词由这些内容生成并可预览
@@ -31,8 +35,6 @@
 
 需要 Rust、Node 22 和 pnpm，以及一个已装好模型的推理服务（例如 Ollama）。
 
-先取 PDF 解析库（只需一次）：
-
 ```bash
 scripts/fetch-vendor.sh
 ```
@@ -49,19 +51,17 @@ pnpm --dir web build
 cargo build --release -p commonbot-server
 ```
 
-只在本机使用：
-
 ```bash
 ./target/release/commonbot
 ```
 
-让局域网里的其他设备也能用（启动时会打印访问码）：
+然后打开 <http://localhost:8600>。要让其他设备访问，在「系统与外观」里打开开关。
+
+打成离线包（产物在 `dist/`）：
 
 ```bash
-./target/release/commonbot --listen 0.0.0.0:8600
+scripts/package.sh
 ```
-
-然后打开 <http://localhost:8600>。数据默认放在系统的应用数据目录，可用 `--data-dir` 指定。
 
 没有模型服务时，可以用仓库里的假模型看界面（它只会复述你的话）：
 
@@ -96,6 +96,10 @@ cargo test --workspace
 | 建造师：访谈、草稿、试答 | 发布后的链接与密钥 |
 | --- | --- |
 | ![建造师](docs/screenshots/p4-builder.png) | ![发布](docs/screenshots/p4-builder-published.png) |
+
+| 必须升级时的提示 | 有新版本时的提示 |
+| --- | --- |
+| ![必须升级](docs/screenshots/p6-upgrade-required.png) | ![可选升级](docs/screenshots/p6-upgrade-optional.png) |
 
 | 访客的独立对话页（手机） | 云端后备 |
 | --- | --- |

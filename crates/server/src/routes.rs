@@ -22,6 +22,9 @@ pub fn api() -> Router<AppState> {
         .route("/providers", get(list_providers).post(create_provider))
         .route("/providers/{id}", axum::routing::put(update_provider).delete(delete_provider))
         .route("/providers/{id}/check", post(check_provider))
+        .route("/update", get(update_status))
+        .route("/update/check", post(update_check))
+        .route("/update/auto", axum::routing::put(update_auto))
         .route("/system", get(system_info))
         .route("/system/lan", axum::routing::put(set_lan))
         .route("/settings/web", get(get_web).put(put_web))
@@ -298,4 +301,46 @@ async fn test_web(State(st): State<AppState>, Json(body): Json<TestWeb>) -> ApiR
     let settings = st.db.run(|c| commonbot_core::web::settings(c)).await?;
     let results = st.web.search(&settings, &body.query, 5).await?;
     Ok(Json(json!({ "results": results })))
+}
+
+// ---------- 升级 ----------
+
+async fn update_json(st: &AppState, failed: bool) -> ApiResult<Value> {
+    let (policy, auto) = st
+        .db
+        .run(|c| {
+            Ok((commonbot_core::update::cached(c)?, store::get_setting(c, "update.auto")?.as_deref() != Some("0")))
+        })
+        .await?;
+    let status = commonbot_core::update::status(VERSION, policy.as_ref(), st.updater.enabled());
+    let mut v = serde_json::to_value(status).unwrap_or_default();
+    v["auto"] = json!(auto);
+    v["failed"] = json!(failed);
+    Ok(v)
+}
+
+/// 当前的升级状态（按上次验证通过的版本策略）。不访问网络。
+async fn update_status(State(st): State<AppState>) -> ApiResult<Json<Value>> {
+    Ok(Json(update_json(&st, false).await?))
+}
+
+/// 现在就查一次。查不到（没网、签名不对）时保持原来的状态，并说明这次没查成。
+async fn update_check(State(st): State<AppState>) -> ApiResult<Json<Value>> {
+    let ok = st.updater.check(&st.db).await;
+    Ok(Json(update_json(&st, st.updater.enabled() && !ok).await?))
+}
+
+#[derive(Deserialize)]
+struct AutoBody {
+    enabled: bool,
+}
+
+async fn update_auto(
+    State(st): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<AutoBody>,
+) -> ApiResult<Json<Value>> {
+    require_local(caller)?;
+    st.db.run(move |c| store::set_setting(c, "update.auto", if body.enabled { "1" } else { "0" })).await?;
+    Ok(Json(update_json(&st, false).await?))
 }

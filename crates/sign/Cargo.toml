@@ -1,0 +1,11 @@
+[package]
+name = "commonbot-sign"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+publish.workspace = true
+
+[dependencies]
+base64 = "0.22"
+minisign = "0.7"

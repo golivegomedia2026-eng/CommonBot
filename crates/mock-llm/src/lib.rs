@@ -20,6 +20,8 @@ pub struct MockConfig {
     pub api_key: Option<String>,
     /// 每段之间的停顿，用来模拟模型出字的速度。
     pub delay: Duration,
+    /// 充当发行地址时提供的版本策略：（policy.json 的内容，签名）。
+    pub policy: Option<(Vec<u8>, String)>,
 }
 
 pub fn router(cfg: MockConfig) -> Router {
@@ -29,6 +31,7 @@ pub fn router(cfg: MockConfig) -> Router {
         .route("/v1/embeddings", post(embeddings))
         .route("/search", get(search))
         .route("/page/{n}", get(page))
+        .route("/update/{file}", get(update_file))
         .with_state(cfg)
 }
 
@@ -219,4 +222,13 @@ async fn page(Path(n): Path<u32>) -> Response {
     };
     let html = format!("<html><head><title>页面 {n}</title></head><body><ul>{filler}</ul><article>{body}</article><ul>{filler}</ul></body></html>");
     ([("content-type", "text/html; charset=utf-8")], html).into_response()
+}
+
+/// 充当发行地址：提供版本策略和它的签名。
+async fn update_file(State(cfg): State<MockConfig>, Path(file): Path<String>) -> Response {
+    match (cfg.policy, file.as_str()) {
+        (Some((policy, _)), "policy.json") => policy.into_response(),
+        (Some((_, sig)), "policy.json.sig") => sig.into_response(),
+        _ => StatusCode::NOT_FOUND.into_response(),
+    }
 }
