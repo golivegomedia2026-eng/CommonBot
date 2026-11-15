@@ -29,6 +29,10 @@ pub struct Agent {
     pub model: Option<String>,
     /// 默认查哪些知识库文件夹（含子文件夹）。空表示不查知识库。
     pub folders: Vec<String>,
+    /// 联网：`off` 不联网；`fallback` 知识库里找不到时联网；`always` 每次都联网。
+    pub web: String,
+    /// 本机模型连不上时，是否允许改用云端模型。
+    pub allow_cloud: bool,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -55,6 +59,8 @@ pub struct AgentInput {
     pub provider_id: Option<String>,
     pub model: Option<String>,
     pub folders: Vec<String>,
+    pub web: String,
+    pub allow_cloud: bool,
 }
 
 const MAX_EXAMPLES: usize = 6;
@@ -98,6 +104,12 @@ impl AgentInput {
             instructions: text("instructions", &self.instructions, 4000)?,
             opening: text("opening", &self.opening, 1000)?,
             examples,
+            web: match self.web.as_str() {
+                "" => "off".into(),
+                "off" | "fallback" | "always" => self.web,
+                _ => return Err(Error::Invalid("web".into())),
+            },
+            allow_cloud: self.allow_cloud,
             provider_id,
             model,
             folders: {
@@ -168,6 +180,8 @@ fn from_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
         provider_id: r.get("provider_id")?,
         model: r.get("model")?,
         folders: serde_json::from_str(&r.get::<_, String>("folders")?).unwrap_or_default(),
+        web: r.get("web")?,
+        allow_cloud: r.get("allow_cloud")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -201,9 +215,9 @@ pub fn create(c: &Connection, input: AgentInput) -> Result<Agent> {
     let i = input.validated()?;
     let (id, now) = (new_id(), now_ms());
     c.execute(
-        "INSERT INTO agents(id, name, description, duty, out_of_scope, instructions, opening, examples, provider_id, model, folders, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
-        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), now],
+        "INSERT INTO agents(id, name, description, duty, out_of_scope, instructions, opening, examples, provider_id, model, folders, web, allow_cloud, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?14)",
+        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), i.web, i.allow_cloud, now],
     )?;
     get(c, &id)
 }
@@ -211,8 +225,8 @@ pub fn create(c: &Connection, input: AgentInput) -> Result<Agent> {
 pub fn update(c: &Connection, id: &str, input: AgentInput) -> Result<Agent> {
     let i = input.validated()?;
     let changed = c.execute(
-        "UPDATE agents SET name = ?2, description = ?3, duty = ?4, out_of_scope = ?5, instructions = ?6, opening = ?7, examples = ?8, provider_id = ?9, model = ?10, folders = ?11, updated_at = ?12 WHERE id = ?1",
-        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), now_ms()],
+        "UPDATE agents SET name = ?2, description = ?3, duty = ?4, out_of_scope = ?5, instructions = ?6, opening = ?7, examples = ?8, provider_id = ?9, model = ?10, folders = ?11, web = ?12, allow_cloud = ?13, updated_at = ?14 WHERE id = ?1",
+        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), i.web, i.allow_cloud, now_ms()],
     )?;
     if changed == 0 {
         return Err(Error::NotFound("agent"));

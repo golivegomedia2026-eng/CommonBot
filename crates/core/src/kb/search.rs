@@ -20,6 +20,18 @@ pub struct Retrieved {
     pub semantic: bool,
     /// 向量检索没用上的原因代码，供界面提示。
     pub note: Option<&'static str>,
+    /// 关键词这一路命中了多少个候选。
+    pub keyword_hits: usize,
+    /// 向量这一路最高的相似度。
+    pub top_score: Option<f32>,
+}
+
+impl Retrieved {
+    /// 知识库里是否基本没有相关内容：一个关键词都没对上，语义上也不接近。
+    /// 用来决定「知识库优先，不足时联网」要不要去联网。
+    pub fn weak(&self) -> bool {
+        self.hits.is_empty() || (self.keyword_hits == 0 && self.top_score.unwrap_or(0.0) < 0.5)
+    }
 }
 
 #[derive(Clone)]
@@ -62,6 +74,8 @@ impl Retriever {
             })
             .await?;
 
+        let keyword_hits = keyword.len();
+        let mut top_score = None;
         let mut lists = vec![keyword];
         let (mut semantic, mut note) = (false, None);
         match kb_models.embed {
@@ -90,6 +104,7 @@ impl Retriever {
                             })
                             .await?;
                         semantic = true;
+                        top_score = vector_hits.first().map(|(_, s)| *s);
                         lists.push(vector_hits.into_iter().map(|(id, _)| id).collect());
                     }
                 }
@@ -98,7 +113,7 @@ impl Retriever {
 
         let top = fuse(&lists, k);
         let hits = self.db.run(move |c| load_hits(c, &top)).await?;
-        Ok(Retrieved { hits, semantic, note })
+        Ok(Retrieved { hits, semantic, note, keyword_hits, top_score })
     }
 }
 

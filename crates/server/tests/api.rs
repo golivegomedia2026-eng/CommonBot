@@ -735,3 +735,289 @@ async fn retrieval_falls_back_to_keywords_when_embedding_service_is_down() {
     assert_eq!(found["semantic"], false);
     assert_eq!(found["hits"][0]["document"], "a.txt");
 }
+
+// ---------- 联网、云端后备、对话里上传文件 ----------
+
+/// 新建对话并发一句话，返回全部事件。
+async fn ask_agent(app: &Router, agent_id: &str, body: Value) -> Vec<(String, Value)> {
+    let cid = req(Method::POST, "/api/conversations").json(json!({ "agent_id": agent_id })).send(app).await.json()
+        ["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = req(Method::POST, &format!("/api/conversations/{cid}/messages")).json(body).send(app).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    r.events()
+}
+
+fn sources_of(events: &[(String, Value)]) -> Option<Value> {
+    events.iter().find(|(n, _)| n == "sources").map(|(_, d)| d.clone())
+}
+
+async fn setup_with(allow_private_pages: bool) -> Router {
+    let db = Db::open_in_memory().unwrap();
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let mut state = AppState::new(db, "0.0.0.0:8600".parse().unwrap(), dir, pdfium()).await.unwrap();
+    state.web.allow_private = allow_private_pages;
+    app(state)
+}
+
+#[tokio::test]
+async fn web_search_modes() {
+    let app = setup_with(true).await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let pid = add_provider(&app, &base, None).await;
+    let site = base.trim_end_matches("/v1");
+
+    let web_agent =
+        req(Method::POST, "/api/agents").json(json!({ "name": "行业动态", "web": "always" })).send(&app).await.json();
+    let wid = web_agent["id"].as_str().unwrap();
+    assert_eq!(
+        req(Method::POST, "/api/agents").json(json!({ "name": "x", "web": "sometimes" })).send(&app).await.status,
+        StatusCode::BAD_REQUEST
+    );
+
+    // 还没配置搜索服务：照常回答，并说明这次没联网
+    let events = ask_agent(&app, wid, json!({ "content": "延保政策有什么变化", "provider_id": pid })).await;
+    let s = sources_of(&events).unwrap();
+    assert_eq!((s["sources"].clone(), s["web_note"].clone()), (json!([]), json!("web_not_configured")));
+    assert_eq!(events.last().unwrap().0, "done");
+
+    // 配置自建搜索，只用摘要
+    let r = req(Method::PUT, "/api/settings/web").json(json!({ "kind": "searxng", "base_url": site })).send(&app).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let test = req(Method::POST, "/api/settings/web/test").json(json!({ "query": "延保" })).send(&app).await.json();
+    assert_eq!(test["results"].as_array().unwrap().len(), 2, "results without a url are dropped: {test}");
+    let events = ask_agent(&app, wid, json!({ "content": "延保政策有什么变化", "provider_id": pid })).await;
+    let s = sources_of(&events).unwrap();
+    assert_eq!(s["sources"][0]["kind"], "web");
+    assert_eq!(s["sources"][0]["title"], "延保政策公告");
+    assert!(s["sources"][0]["text"].as_str().unwrap().starts_with("摘要："));
+    let saved = &events.last().unwrap().1["message"];
+    assert!(saved["content"].as_str().unwrap().contains("[1]"), "{saved}");
+    assert_eq!(saved["sources"][0]["url"], format!("{site}/page/1"));
+
+    // 打开「读取网页正文」：带回正文里与问题相关的段落，而不是整页导航
+    req(Method::PUT, "/api/settings/web")
+        .json(json!({ "kind": "searxng", "base_url": site, "fetch_pages": true }))
+        .send(&app)
+        .await;
+    let events = ask_agent(&app, wid, json!({ "content": "延保价格调整为多少", "provider_id": pid })).await;
+    let text = sources_of(&events).unwrap()["sources"][0]["text"].as_str().unwrap().to_string();
+    assert!(text.contains("延保价格调整为设备价格的百分之十"), "{text}");
+
+    // 搜索服务出错：不让问答失败
+    let events = ask_agent(&app, wid, json!({ "content": "搜索失败 的情况", "provider_id": pid })).await;
+    assert_eq!(sources_of(&events).unwrap()["web_note"], "web_search_failed");
+    assert_eq!(events.last().unwrap().0, "done");
+
+    // 对话里临时关掉联网；不联网的智能体临时打开
+    let events = ask_agent(&app, wid, json!({ "content": "不联网问一句", "provider_id": pid, "web": false })).await;
+    assert!(sources_of(&events).is_none());
+    let events = ask_agent(&app, "general", json!({ "content": "联网问一句", "provider_id": pid, "web": true })).await;
+    assert_eq!(sources_of(&events).unwrap()["sources"][0]["kind"], "web");
+
+    // 「知识库优先，不足时联网」：知识库里有的不联网，没有的才联网；出处编号在两类之间连续
+    let f = folder(&app, "售后", None).await;
+    upload(&app, &f, &[("延保说明.txt", fixture("gbk.txt"))]).await;
+    settle(&app, &f).await;
+    let fb = req(Method::POST, "/api/agents")
+        .json(json!({ "name": "售后", "folders": [f], "web": "fallback" }))
+        .send(&app)
+        .await
+        .json();
+    let fid = fb["id"].as_str().unwrap();
+    let events = ask_agent(&app, fid, json!({ "content": "延保服务什么时候可以购买", "provider_id": pid })).await;
+    let kinds: Vec<String> = sources_of(&events).unwrap()["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| s["kind"].as_str().unwrap().to_string())
+        .collect();
+    assert_eq!(kinds, vec!["kb"]);
+    let events = ask_agent(&app, fid, json!({ "content": "xyzzy quantum", "provider_id": pid })).await;
+    let src = sources_of(&events).unwrap()["sources"].clone();
+    assert!(src.as_array().unwrap().iter().all(|s| s["kind"] == "web"), "{src}");
+    let both = req(Method::POST, "/api/agents")
+        .json(json!({ "name": "都用", "folders": [f], "web": "always" }))
+        .send(&app)
+        .await
+        .json();
+    let events = ask_agent(
+        &app,
+        both["id"].as_str().unwrap(),
+        json!({ "content": "延保服务什么时候可以购买", "provider_id": pid }),
+    )
+    .await;
+    let numbered: Vec<(i64, String)> = sources_of(&events).unwrap()["sources"]
+        .as_array()
+        .unwrap()
+        .iter()
+        .map(|s| (s["n"].as_i64().unwrap(), s["kind"].as_str().unwrap().to_string()))
+        .collect();
+    assert_eq!(numbered, vec![(1, "kb".into()), (2, "web".into()), (3, "web".into())]);
+
+    // 密钥不回传
+    req(Method::PUT, "/api/settings/web").json(json!({ "kind": "tavily", "api_key": "tvly-secret" })).send(&app).await;
+    let got = req(Method::GET, "/api/settings/web").send(&app).await;
+    assert!(got.json()["has_key"] == true && !got.text.contains("tvly-secret"), "{}", got.text);
+}
+
+#[tokio::test]
+async fn pages_on_private_addresses_are_not_fetched() {
+    // 默认设置下，搜索结果里指向本机的网址不会被读取，只保留摘要
+    let app = setup_with(false).await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let pid = add_provider(&app, &base, None).await;
+    req(Method::PUT, "/api/settings/web")
+        .json(json!({ "kind": "searxng", "base_url": base.trim_end_matches("/v1"), "fetch_pages": true }))
+        .send(&app)
+        .await;
+    let events =
+        ask_agent(&app, "general", json!({ "content": "延保价格调整为多少", "provider_id": pid, "web": true })).await;
+    let text = sources_of(&events).unwrap()["sources"][0]["text"].as_str().unwrap().to_string();
+    assert!(text.starts_with("摘要：") && !text.contains("百分之十"), "{text}");
+}
+
+#[tokio::test]
+async fn cloud_model_takes_over_only_when_allowed() {
+    let app = setup().await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    // 本机服务连不上；云端服务可用
+    let dead = add_provider(&app, "http://127.0.0.1:9/v1", None).await;
+    let cloud = req(Method::POST, "/api/providers")
+        .json(json!({ "name": "云端", "kind": "cloud", "base_url": base, "default_model": "mock-large" }))
+        .send(&app)
+        .await
+        .json();
+
+    // 不允许：直接报连不上
+    let events = ask_agent(&app, "general", json!({ "content": "在吗", "provider_id": dead })).await;
+    let (name, data) = events.last().unwrap();
+    assert_eq!((name.as_str(), data["code"].as_str().unwrap()), ("error", "model_unreachable"));
+    assert!(!events.iter().any(|(n, _)| n == "fallback"));
+
+    // 允许：改用云端，并在回答上标明
+    let a = req(Method::POST, "/api/agents")
+        .json(json!({ "name": "可用云端", "allow_cloud": true }))
+        .send(&app)
+        .await
+        .json();
+    let events = ask_agent(&app, a["id"].as_str().unwrap(), json!({ "content": "在吗", "provider_id": dead })).await;
+    let fb = events.iter().find(|(n, _)| n == "fallback").expect("fallback event");
+    assert_eq!(fb.1["model"], "mock-large");
+    let saved = &events.last().unwrap().1["message"];
+    assert_eq!(
+        (saved["status"].as_str().unwrap(), saved["cloud"].clone(), saved["model"].clone()),
+        ("ok", json!(true), json!("mock-large"))
+    );
+
+    // 直接选云端模型对话，也标为云端；本机模型的回答不标
+    let events = ask_agent(&app, "general", json!({ "content": "在吗", "provider_id": cloud["id"] })).await;
+    assert_eq!(events.last().unwrap().1["message"]["cloud"], true);
+    let local = add_provider(&app, &base, None).await;
+    let events = ask_agent(&app, "general", json!({ "content": "在吗", "provider_id": local })).await;
+    assert_eq!(events.last().unwrap().1["message"]["cloud"], false);
+}
+
+/// 给对话上传文件。
+async fn attach_files(app: &Router, conversation: &str, files: &[(&str, Vec<u8>)]) -> Value {
+    let boundary = "----commonbot-test";
+    let mut body: Vec<u8> = Vec::new();
+    for (name, bytes) in files {
+        body.extend(
+            format!("--{boundary}\r\nContent-Disposition: form-data; name=\"files\"; filename=\"{name}\"\r\n\r\n")
+                .as_bytes(),
+        );
+        body.extend(bytes);
+        body.extend(b"\r\n");
+    }
+    body.extend(format!("--{boundary}--\r\n").as_bytes());
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri(format!("/api/conversations/{conversation}/attachments"))
+        .header(header::HOST, "localhost:8600")
+        .header(header::CONTENT_TYPE, format!("multipart/form-data; boundary={boundary}"))
+        .body(Body::from(body))
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(LOCAL.parse::<SocketAddr>().unwrap()));
+    let resp = app.clone().oneshot(request).await.unwrap();
+    serde_json::from_slice(&resp.into_body().collect().await.unwrap().to_bytes()).unwrap()
+}
+
+#[tokio::test]
+async fn files_uploaded_in_a_chat_are_used_for_that_chat_only() {
+    let app = setup().await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let pid = add_provider(&app, &base, None).await;
+    let cid = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" })).send(&app).await.json()
+        ["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+
+    // 没有文字识别模型：图片读不了，其余照常
+    let up = attach_files(
+        &app,
+        &cid,
+        &[
+            ("报价单.xlsx", fixture("sample.xlsx")),
+            ("照片.png", fixture("scan.png")),
+            ("保修条款.pdf", fixture("text.pdf")),
+            ("x.zip", b"PK".to_vec()),
+        ],
+    )
+    .await;
+    let added: Vec<&str> = up["added"].as_array().unwrap().iter().map(|a| a["name"].as_str().unwrap()).collect();
+    assert_eq!(added, vec!["报价单.xlsx", "保修条款.pdf"]);
+    assert_eq!(
+        up["rejected"],
+        json!([{ "name": "照片.png", "code": "ocr_not_configured" }, { "name": "x.zip", "code": "doc_unsupported" }])
+    );
+    assert!(!up.to_string().contains("政务云一期"), "extracted text is not sent back: {up}");
+    let (xlsx, pdf) = (up["added"][0]["id"].as_str().unwrap(), up["added"][1]["id"].as_str().unwrap());
+
+    // 发之前移除一个
+    assert_eq!(
+        req(Method::DELETE, &format!("/api/conversations/{cid}/attachments/{pdf}")).send(&app).await.status,
+        StatusCode::NO_CONTENT
+    );
+
+    let path = format!("/api/conversations/{cid}/messages");
+    let r = req(Method::POST, &path)
+        .json(json!({ "content": "政务云一期中标金额是多少", "provider_id": pid, "attachment_ids": [xlsx] }))
+        .send(&app)
+        .await;
+    let events = r.events();
+    assert_eq!(events[0].1["attachments"][0]["name"], "报价单.xlsx");
+    let s = sources_of(&events).unwrap();
+    assert_eq!(
+        (s["sources"][0]["kind"].as_str().unwrap(), s["sources"][0]["document"].as_str().unwrap()),
+        ("file", "报价单.xlsx")
+    );
+    assert!(events.last().unwrap().1["message"]["content"].as_str().unwrap().contains("依据资料："));
+
+    // 之后的追问仍然带着这个文件；已发出的文件不能再移除
+    let r = req(Method::POST, &path).json(json!({ "content": "那智慧园区呢", "provider_id": pid })).send(&app).await;
+    assert_eq!(sources_of(&r.events()).unwrap()["sources"][0]["document"], "报价单.xlsx");
+    assert_eq!(
+        req(Method::DELETE, &format!("/api/conversations/{cid}/attachments/{xlsx}")).send(&app).await.status,
+        StatusCode::NOT_FOUND
+    );
+    let got = req(Method::GET, &format!("/api/conversations/{cid}")).send(&app).await.json();
+    assert_eq!(got["attachments"].as_array().unwrap().len(), 1);
+    assert_eq!(got["attachments"][0]["message_id"], got["messages"][0]["id"]);
+
+    // 另一个对话看不到它
+    let events = ask_agent(&app, "general", json!({ "content": "政务云一期中标金额是多少", "provider_id": pid })).await;
+    assert!(sources_of(&events).is_none());
+
+    // 配置文字识别模型后，图片和扫描件也能在对话里用
+    req(Method::PUT, "/api/kb/settings")
+        .json(json!({ "ocr_provider_id": pid, "ocr_model": "mock-vision" }))
+        .send(&app)
+        .await;
+    let up = attach_files(&app, &cid, &[("照片.png", fixture("scan.png")), ("扫描件.pdf", fixture("scan.pdf"))]).await;
+    assert_eq!(up["added"].as_array().unwrap().len(), 2, "{up}");
+    assert_eq!(attach_files(&app, "nope", &[]).await["code"], "not_found");
+}

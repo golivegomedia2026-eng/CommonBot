@@ -2,6 +2,7 @@
 
 mod access;
 mod assets;
+mod chat;
 mod routes;
 mod routes_kb;
 
@@ -30,6 +31,8 @@ pub struct AppState {
     pub retriever: Retriever,
     /// 知识库入库队列。
     pub ingestor: Arc<Ingestor>,
+    /// 联网搜索。
+    pub web: commonbot_core::web::WebClient,
     pub(crate) access_token: Arc<RwLock<String>>,
     pub(crate) access_failures: Arc<Mutex<access::Failures>>,
 }
@@ -50,6 +53,10 @@ impl AppState {
         Ok(Self {
             retriever: Retriever { db: db.clone(), llm: llm.clone(), index },
             ingestor,
+            // 读取网页时默认拒绝本机和内网地址；只有测试会放开
+            web: commonbot_core::web::WebClient::new(
+                std::env::var("COMMONBOT_WEB_ALLOW_PRIVATE").is_ok_and(|v| v == "1"),
+            ),
             db,
             llm,
             listen,
@@ -86,7 +93,9 @@ impl From<Error> for ApiError {
         let status = match &e {
             Error::NotFound(_) => StatusCode::NOT_FOUND,
             Error::Invalid(_) | Error::Doc(..) => StatusCode::BAD_REQUEST,
-            Error::Unreachable(_) | Error::Unauthorized | Error::Upstream { .. } => StatusCode::BAD_GATEWAY,
+            Error::Unreachable(_) | Error::Unauthorized | Error::Upstream { .. } | Error::Web(..) => {
+                StatusCode::BAD_GATEWAY
+            }
             Error::Storage(_) | Error::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,
         };
         if status == StatusCode::INTERNAL_SERVER_ERROR {

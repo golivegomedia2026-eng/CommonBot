@@ -194,6 +194,8 @@ pub struct Conversation {
     pub model: Option<String>,
     /// 这个对话临时指定的知识范围；`None` 表示按智能体的默认。
     pub scope: Option<Vec<String>>,
+    /// 这个对话临时指定是否联网；`None` 表示按智能体的默认。
+    pub web: Option<bool>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -209,6 +211,9 @@ pub struct Message {
     pub error_code: Option<String>,
     /// 回答引用的出处。
     pub sources: serde_json::Value,
+    /// 这条回答实际用的模型；是否来自云端。
+    pub model: Option<String>,
+    pub cloud: bool,
     pub created_at: i64,
 }
 
@@ -220,6 +225,7 @@ fn conversation_from_row(r: &rusqlite::Row) -> rusqlite::Result<Conversation> {
         provider_id: r.get("provider_id")?,
         model: r.get("model")?,
         scope: r.get::<_, Option<String>>("scope")?.and_then(|s| serde_json::from_str(&s).ok()),
+        web: r.get::<_, Option<String>>("web")?.map(|w| w == "on"),
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -235,6 +241,8 @@ fn message_from_row(r: &rusqlite::Row) -> rusqlite::Result<Message> {
         status: r.get("status")?,
         error_code: r.get("error_code")?,
         sources: serde_json::from_str(&r.get::<_, String>("sources")?).unwrap_or_else(|_| serde_json::json!([])),
+        model: r.get("model")?,
+        cloud: r.get("cloud")?,
         created_at: r.get("created_at")?,
     })
 }
@@ -270,6 +278,13 @@ pub fn set_scope(c: &Connection, id: &str, scope: Option<&[String]>) -> Result<(
         0 => Err(Error::NotFound("conversation")),
         _ => Ok(()),
     }
+}
+
+/// 设置对话是否联网。`None` 恢复为智能体的默认。
+pub fn set_web(c: &Connection, id: &str, web: Option<bool>) -> Result<()> {
+    let value = web.map(|w| if w { "on" } else { "off" });
+    c.execute("UPDATE conversations SET web = ?2 WHERE id = ?1", params![id, value])?;
+    Ok(())
 }
 
 pub fn rename_conversation(c: &Connection, id: &str, title: &str) -> Result<Conversation> {
@@ -326,22 +341,34 @@ pub fn add_user_message(
     Ok(msg)
 }
 
-pub fn add_assistant_message(
-    c: &Connection,
-    conversation_id: &str,
-    content: &str,
-    reasoning: &str,
-    status: &str,
-    error_code: Option<&str>,
-    sources: &serde_json::Value,
-) -> Result<Message> {
+/// 一条待保存的回答。
+#[derive(Debug, Default)]
+pub struct Reply<'a> {
+    pub content: &'a str,
+    pub reasoning: &'a str,
+    /// `ok` / `stopped` / `error`
+    pub status: &'a str,
+    pub error_code: Option<&'a str>,
+    pub sources: serde_json::Value,
+    pub model: Option<&'a str>,
+    pub cloud: bool,
+}
+
+pub fn add_assistant_message(c: &Connection, conversation_id: &str, r: &Reply) -> Result<Message> {
     let (id, now) = (new_id(), now_ms());
+    let sources = if r.sources.is_null() { "[]".to_string() } else { r.sources.to_string() };
     c.execute(
-        "INSERT INTO messages(id, conversation_id, role, content, reasoning, status, error_code, sources, created_at) VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, ?8)",
-        params![id, conversation_id, content, reasoning, status, error_code, sources.to_string(), now],
+        "INSERT INTO messages(id, conversation_id, role, content, reasoning, status, error_code, sources, model, cloud, created_at)
+         VALUES (?1, ?2, 'assistant', ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        params![id, conversation_id, r.content, r.reasoning, r.status, r.error_code, sources, r.model, r.cloud, now],
     )?;
     c.execute("UPDATE conversations SET updated_at = ?2 WHERE id = ?1", params![conversation_id, now])?;
     Ok(c.query_row("SELECT * FROM messages WHERE id = ?1", [&id], message_from_row)?)
+}
+
+/// 第一个设了默认模型的云端推理服务，用作本机模型不可用时的后备。
+pub fn cloud_fallback(c: &Connection) -> Result<Option<Provider>> {
+    Ok(list_providers(c)?.into_iter().find(|p| p.kind == "cloud" && p.default_model.is_some()))
 }
 
 #[cfg(test)]
@@ -411,7 +438,7 @@ mod tests {
                 "p",
                 "m",
             )?;
-            add_assistant_message(c, &conv.id, "好", "", "ok", None, &serde_json::json!([]))?;
+            add_assistant_message(c, &conv.id, &Reply { content: "好", status: "ok", ..Default::default() })?;
             let conv = get_conversation(c, &conv.id)?;
             assert_eq!(conv.title.chars().count(), 30);
             assert_eq!(conv.model.as_deref(), Some("m"));

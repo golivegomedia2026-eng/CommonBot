@@ -120,6 +120,27 @@ ALTER TABLE agents ADD COLUMN folders TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE conversations ADD COLUMN scope TEXT;
 ALTER TABLE messages ADD COLUMN sources TEXT NOT NULL DEFAULT '[]';
 "#,
+    r#"
+-- 联网：智能体的默认做法（off / fallback / always）；对话可临时开关（NULL 表示按智能体的默认）
+ALTER TABLE agents ADD COLUMN web TEXT NOT NULL DEFAULT 'off';
+ALTER TABLE conversations ADD COLUMN web TEXT;
+-- 本机模型连不上时是否允许改用云端模型；每条回答记下实际用的模型、是否云端
+ALTER TABLE agents ADD COLUMN allow_cloud INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE messages ADD COLUMN model TEXT;
+ALTER TABLE messages ADD COLUMN cloud INTEGER NOT NULL DEFAULT 0;
+-- 对话里上传的文件：只保存读出的文字，随对话一起删除
+CREATE TABLE attachments (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    message_id      TEXT,
+    name            TEXT NOT NULL,
+    size            INTEGER NOT NULL,
+    text            TEXT NOT NULL,
+    skipped_pages   INTEGER NOT NULL DEFAULT 0,
+    created_at      INTEGER NOT NULL
+);
+CREATE INDEX attachments_by_conversation ON attachments(conversation_id, created_at);
+"#,
 ];
 
 impl Db {

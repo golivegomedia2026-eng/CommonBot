@@ -21,6 +21,9 @@ pub enum Error {
     /// 文档处理失败。第一个字段是稳定的原因代码。
     #[error("document problem ({0}): {1}")]
     Doc(&'static str, String),
+    /// 联网搜索失败。第一个字段是稳定的原因代码。
+    #[error("web search problem ({0}): {1}")]
+    Web(&'static str, String),
     #[error("storage error: {0}")]
     Storage(#[from] rusqlite::Error),
     #[error("internal error: {0}")]
@@ -35,7 +38,7 @@ impl Error {
             Error::Unreachable(_) => "model_unreachable",
             Error::Unauthorized => "model_unauthorized",
             Error::Upstream { .. } => "model_error",
-            Error::Doc(code, _) => code,
+            Error::Doc(code, _) | Error::Web(code, _) => code,
             Error::Storage(_) => "storage",
             Error::Internal(_) => "internal",
         }
