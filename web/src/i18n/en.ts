@@ -239,6 +239,18 @@ const messages: typeof zh = {
     pickModel: "Choose a model",
     generating: "Generating…",
   },
+  compute: {
+    title: "Local compute pack",
+    external: "An inference service is already running on this machine and is used as is; the runtime in the pack was not started.",
+    starting: "Starting the bundled inference runtime…",
+    running: "The bundled inference runtime is running. Models are read from the pack; no network is needed.",
+    failed: "The bundled inference runtime could not start.",
+    tag: { external: "Using existing service", starting: "Starting", running: "Running", failed: "Not running" },
+    chat: "Chat",
+    extra: "Alternative",
+    embed: "Embedding",
+    vision: "Vision",
+  },
   models: {
     title: "Models",
     subtitle: "The local inference service is used by default. Cloud models can be added as a fallback.",

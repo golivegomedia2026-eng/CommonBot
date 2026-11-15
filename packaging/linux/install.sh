@@ -27,6 +27,18 @@ cp -R "$here/LICENSES/." "$dest/LICENSES/" 2>/dev/null || true
 cp "$here/VERSION" "$here/uninstall.sh" "$dest/"
 chmod 755 "$dest/commonbot" "$dest/uninstall.sh"
 
+# 算力包（推理运行时 + 模型）：和安装包放在同一个文件夹、或它的上一级时一并装上。
+# 体积很大，所以是移动而不是复制；跨磁盘时系统会自动改为复制。
+for c in "$here/compute" "$here/../compute"; do
+  if [ -f "$c/pack.json" ]; then
+    echo "正在安装算力包（$(du -sh "$c" | cut -f1)）……"
+    rm -rf "$dest/compute"
+    mv "$c" "$dest/compute"
+    chown -R "$owner" "$dest/compute"
+    break
+  fi
+done
+
 sed "s/__USER__/$owner/" "$here/commonbot.service" > /etc/systemd/system/commonbot.service
 systemctl daemon-reload
 systemctl enable --now commonbot

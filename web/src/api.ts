@@ -219,12 +219,20 @@ async function call<T>(method: string, path: string, body?: unknown, signal?: Ab
   return resp.status === 204 ? (undefined as T) : resp.json();
 }
 
+/** 本机算力：随包的推理运行时的状态，以及算力包里各模型的用场。 */
+export interface ComputeInfo {
+  state: "none" | "external" | "starting" | "running" | "failed";
+  detail?: string;
+  dir?: string;
+  models?: { chat: string; extra: string[]; embed: string; vision: string };
+}
+
 export const api = {
   health: () => call<Health>("GET", "/health"),
   update: () => call<UpdateStatus>("GET", "/update"),
   checkUpdate: () => call<UpdateStatus>("POST", "/update/check"),
   setAutoUpdate: (enabled: boolean) => call<UpdateStatus>("PUT", "/update/auto", { enabled }),
-  system: () => call<{ version: string; lan: boolean; lan_fixed: boolean; port: number; addresses: string[] }>("GET", "/system"),
+  system: () => call<{ version: string; lan: boolean; lan_fixed: boolean; port: number; addresses: string[]; compute: ComputeInfo }>("GET", "/system"),
   setLan: (enabled: boolean) => call<{ lan: boolean }>("PUT", "/system/lan", { enabled }),
   enterAccessCode: (code: string) => call<{ ok: boolean }>("POST", "/access", { code }),
   accessCode: () => call<{ code: string; listen: string }>("GET", "/access-code"),

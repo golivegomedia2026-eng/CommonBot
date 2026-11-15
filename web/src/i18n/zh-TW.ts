@@ -239,6 +239,18 @@ const messages: typeof zh = {
     pickModel: "選擇模型",
     generating: "正在產生…",
   },
+  compute: {
+    title: "本機算力包",
+    external: "這台機器上已有推理服務在執行，直接使用它；算力包裡的執行環境沒有啟動。",
+    starting: "正在啟動隨包的推理執行環境……",
+    running: "隨包的推理執行環境正在執行，模型從算力包裡讀取，不需要連網。",
+    failed: "隨包的推理執行環境無法啟動。",
+    tag: { external: "使用既有服務", starting: "啟動中", running: "執行中", failed: "未執行" },
+    chat: "對話",
+    extra: "備選",
+    embed: "向量化",
+    vision: "看圖",
+  },
   models: {
     title: "模型",
     subtitle: "預設使用本機的推論服務。雲端模型可作為後備加入。",

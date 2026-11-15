@@ -237,6 +237,18 @@ export default {
     pickModel: "选择模型",
     generating: "正在生成…",
   },
+  compute: {
+    title: "本机算力包",
+    external: "这台机器上已有推理服务在运行，直接使用它；算力包里的运行时没有启动。",
+    starting: "正在启动随包的推理运行时……",
+    running: "随包的推理运行时正在运行，模型从算力包里读取，不需要联网。",
+    failed: "随包的推理运行时启动不了。",
+    tag: { external: "使用已有服务", starting: "启动中", running: "运行中", failed: "未运行" },
+    chat: "对话",
+    extra: "备选",
+    embed: "向量化",
+    vision: "看图",
+  },
   models: {
     title: "模型",
     subtitle: "默认用本机的推理服务。云端模型可作为后备添加。",

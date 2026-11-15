@@ -239,6 +239,18 @@ const messages: typeof zh = {
     pickModel: "モデルを選択",
     generating: "生成中…",
   },
+  compute: {
+    title: "ローカル計算パック",
+    external: "このマシンではすでに推論サービスが動いているため、それをそのまま使います。パック内のランタイムは起動していません。",
+    starting: "同梱の推論ランタイムを起動しています…",
+    running: "同梱の推論ランタイムが動いています。モデルはパックから読み込むため、ネットワークは不要です。",
+    failed: "同梱の推論ランタイムを起動できません。",
+    tag: { external: "既存のサービスを使用", starting: "起動中", running: "実行中", failed: "停止" },
+    chat: "対話",
+    extra: "予備",
+    embed: "ベクトル化",
+    vision: "画像",
+  },
   models: {
     title: "モデル",
     subtitle: "既定ではこのマシンの推論サービスを使います。クラウドのモデルは予備として追加できます。",

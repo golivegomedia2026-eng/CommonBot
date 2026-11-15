@@ -40,6 +40,19 @@ Three kinds of model are useful:
 | Embedding model | Lets the knowledge base search by meaning, e.g. bge-m3 | Keyword search only |
 | Vision model | Reads text in scans and images | Scans and images can't be read |
 
+### Compute pack: the inference service and models, installed offline
+
+If you would rather not install Ollama and pull models yourself, use a compute pack: a folder named `compute` holding the inference runtime and a chosen set of models. When CommonBot starts and finds it, it starts the runtime itself and assigns the chat, embedding and vision models. No network and no further setup are needed.
+
+Put the `compute` folder in either place:
+
+- in the same folder as the `commonbot` program (on Linux, put it there before running `sudo ./install.sh`, which installs it to `/opt/commonbot` as well);
+- in the data folder (see section 9; the desktop app uses this place).
+
+The default set is about 35 GB, chosen for a machine with 48 GB of memory: qwen3:14b for everyday chat, qwen3:30b as a stronger alternative, bge-m3 for embedding and qwen2.5vl:7b for vision. The top of the Models page shows the pack's status. If Ollama is already running on the machine, CommonBot uses it and does not start a second copy. The runtime's log is `logs/compute.log` in the data folder.
+
+The pack is built by whoever publishes it, on a machine with internet access (`scripts/compute-pack.sh` in the source), and can carry other models.
+
 ### Installing models without internet access
 
 Pull the models with Ollama on a machine that is online, then copy its whole models directory to the same place on this machine:

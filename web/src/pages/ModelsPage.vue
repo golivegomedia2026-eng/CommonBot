@@ -2,7 +2,7 @@
 import { computed, onMounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
-import { api, kb, type ModelRef, type Provider, type ProviderInput } from "../api";
+import { api, kb, type ComputeInfo, type ModelRef, type Provider, type ProviderInput } from "../api";
 import Icon from "../components/Icon.vue";
 import { errorText } from "../i18n";
 import { checkProvider, loadProviders, modelOptions, state } from "../state";
@@ -17,6 +17,20 @@ const editing = ref<string | null>(null);
 const form = reactive({ name: "", kind: "local" as "local" | "cloud", base_url: "", api_key: "", clear_key: false, default_model: "", has_key: false });
 
 onMounted(() => loadProviders().catch((e) => (error.value = errorText(e))));
+
+// 本机算力包：启动中时隔一会儿再看，起来后刷新推理服务列表
+const compute = ref<ComputeInfo | null>(null);
+async function loadCompute() {
+  try {
+    const before = compute.value?.state;
+    compute.value = (await api.system()).compute;
+    if (compute.value.state === "starting") setTimeout(loadCompute, 2000);
+    else if (before === "starting") await loadProviders();
+  } catch {
+    // 看不到状态不影响其他设置
+  }
+}
+onMounted(loadCompute);
 
 // 知识库用的两个模型
 const options = computed(modelOptions);
@@ -136,6 +150,23 @@ async function remove(id: string) {
   </header>
   <p class="muted">{{ $t("models.subtitle") }}</p>
   <div v-if="error" class="alert err" role="alert">{{ error }}</div>
+
+  <div v-if="compute && compute.state !== 'none'" class="card" data-test="compute">
+    <div class="row">
+      <div class="grow">
+        <h2>{{ $t("compute.title") }}</h2>
+        <p class="muted" style="margin-top: 4px">{{ $t(`compute.${compute.state}`) }}</p>
+      </div>
+      <span class="tag" :class="compute.state === 'failed' ? 'err' : compute.state === 'starting' ? '' : 'ok'">{{ $t(`compute.tag.${compute.state}`) }}</span>
+    </div>
+    <p v-if="compute.detail" class="muted mono" style="margin-top: 8px; overflow-wrap: anywhere">{{ compute.detail }}</p>
+    <div v-if="compute.models" class="row wrap" style="margin-top: 10px; gap: 6px">
+      <span v-if="compute.models.chat" class="tag">{{ $t("compute.chat") }} · {{ compute.models.chat }}</span>
+      <span v-for="m in compute.models.extra" :key="m" class="tag">{{ $t("compute.extra") }} · {{ m }}</span>
+      <span v-if="compute.models.embed" class="tag">{{ $t("compute.embed") }} · {{ compute.models.embed }}</span>
+      <span v-if="compute.models.vision" class="tag">{{ $t("compute.vision") }} · {{ compute.models.vision }}</span>
+    </div>
+  </div>
 
   <div v-if="state.providersLoaded && !state.providers.length" class="card muted">{{ $t("models.emptyList") }}</div>
   <div v-for="p in state.providers" :key="p.id" class="card">

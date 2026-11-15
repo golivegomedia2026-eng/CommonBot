@@ -61,6 +61,13 @@ pub async fn run(
         state.updater = std::sync::Arc::new(state.updater.with_base(&base));
     }
     state.updater.clone().spawn(db.clone());
+    // 本机算力：找到算力包就启动随包的推理运行时
+    let pack = crate::compute::find_pack(&crate::compute::default_places(&opts.data_dir));
+    if let Some(p) = &pack {
+        println!("  compute pack: {}", p.dir.display());
+    }
+    state.compute = crate::compute::Compute::new(pack, 11434, &opts.data_dir);
+    state.compute.spawn(db.clone());
     let router = app(state.clone());
     tokio::pin!(shutdown);
 
@@ -105,6 +112,7 @@ pub async fn run(
         let _ = stop_tx.send(());
         let _ = tokio::time::timeout(std::time::Duration::from_secs(2), &mut serve).await;
         if quit {
+            state.compute.stop();
             return Ok(());
         }
         addr = wanted(lan_on().await, bound.port());

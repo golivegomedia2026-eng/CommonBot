@@ -1466,3 +1466,136 @@ async fn upgrade_is_required_only_on_a_verified_policy() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+// ---------- 本机算力 ----------
+
+/// 做一个假的算力包：运行时是一个脚本，在指定端口上应答模型列表（代替真正的 Ollama）。
+#[cfg(unix)]
+fn fake_pack(dir: &std::path::Path) -> commonbot_server::compute::Pack {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("compute/runtime/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(dir.join("compute/models")).unwrap();
+    let script = r#"#!/bin/sh
+[ "$1" = serve ] || exit 2
+[ -d "$OLLAMA_MODELS" ] || exit 3
+exec python3 -c '
+import sys, json
+from http.server import BaseHTTPRequestHandler, HTTPServer
+class H(BaseHTTPRequestHandler):
+    def do_GET(self):
+        body = json.dumps({"data": [{"id": "pack-chat"}, {"id": "pack-embed"}]}).encode()
+        self.send_response(200); self.send_header("Content-Type", "application/json"); self.send_header("Content-Length", str(len(body))); self.end_headers(); self.wfile.write(body)
+    def log_message(self, *a): pass
+HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
+' "${OLLAMA_HOST##*:}"
+"#;
+    std::fs::write(bin.join("ollama"), script).unwrap();
+    std::fs::set_permissions(bin.join("ollama"), std::fs::Permissions::from_mode(0o755)).unwrap();
+    std::fs::write(dir.join("compute/pack.json"), json!({ "format": 1, "platform": "test", "built": "2026-01-01T00:00:00Z", "chat": "pack-chat", "extra": [], "embed": "pack-embed", "vision": "" }).to_string()).unwrap();
+    commonbot_server::compute::find_pack(&[dir.to_path_buf()]).expect("pack is found")
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn compute_pack_is_started_watched_and_wired_up_once() {
+    use commonbot_server::compute::{find_pack, Compute, State};
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    assert!(find_pack(std::slice::from_ref(&dir)).is_none(), "no pack: nothing to find");
+    let pack = fake_pack(&dir);
+    assert_eq!(pack.info.chat, "pack-chat");
+
+    // 找一个空闲端口
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let db = Db::open_in_memory().unwrap();
+    let mut state = AppState::new(db.clone(), "0.0.0.0:8600".parse().unwrap(), dir.clone(), None).await.unwrap();
+    state.compute = Compute::new(Some(pack.clone()), port, &dir);
+    assert_eq!(state.compute.state(), State::None);
+    state.compute.spawn(db.clone());
+    let compute = state.compute.clone();
+    let app = app(state);
+
+    let wait_for = |want: State| {
+        let c = compute.clone();
+        async move {
+            for _ in 0..100 {
+                if c.state() == want {
+                    return;
+                }
+                tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+            }
+            panic!("state stayed {:?}, wanted {want:?}", c.state());
+        }
+    };
+    wait_for(State::Running).await;
+
+    // 界面能看到状态和各模型的用场
+    let sys = req(Method::GET, "/api/system").send(&app).await.json();
+    assert_eq!(sys["compute"]["state"], "running");
+    assert_eq!(sys["compute"]["models"]["chat"], "pack-chat");
+
+    // 自动接好：新建了指向它的推理服务并设了默认模型；向量化模型也选好了；没有看图模型就不设
+    let providers = req(Method::GET, "/api/providers").send(&app).await.json();
+    let mine = providers
+        .as_array()
+        .unwrap()
+        .iter()
+        .find(|p| p["base_url"] == format!("http://127.0.0.1:{port}/v1"))
+        .expect("provider created");
+    assert_eq!(mine["default_model"], "pack-chat");
+    let kbs = req(Method::GET, "/api/kb/settings").send(&app).await.json();
+    assert_eq!(kbs["embed"]["model"], "pack-embed");
+    assert!(kbs["ocr"].is_null());
+    let check =
+        req(Method::POST, &format!("/api/providers/{}/check", mine["id"].as_str().unwrap())).send(&app).await.json();
+    assert_eq!(check["models"], json!(["pack-chat", "pack-embed"]));
+
+    // 用户之后改了设置；运行时崩了被重新拉起，不会把用户的设置改回去
+    req(Method::PUT, "/api/kb/settings").json(json!({})).send(&app).await;
+    let pid = String::from_utf8(
+        std::process::Command::new("pgrep")
+            .args(["-f", &format!("int\\(sys.argv\\[1\\]\\).*{port}$|{port}$")])
+            .output()
+            .unwrap()
+            .stdout,
+    )
+    .unwrap();
+    for p in pid.split_whitespace() {
+        let _ = std::process::Command::new("kill").arg("-9").arg(p).status();
+    }
+    wait_for(State::Starting).await;
+    wait_for(State::Running).await;
+    assert!(req(Method::GET, "/api/kb/settings").send(&app).await.json()["embed"].is_null(), "user's choice is kept");
+
+    // 停止后端口关闭，不再重启
+    compute.stop();
+    tokio::time::sleep(std::time::Duration::from_millis(3500)).await;
+    assert!(std::net::TcpStream::connect(("127.0.0.1", port)).is_err(), "the runtime is gone after stop");
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn an_inference_service_already_on_the_port_is_used_as_is() {
+    use commonbot_server::compute::{Compute, State};
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let pack = fake_pack(&dir);
+    // 端口上已经有推理服务（这里用假模型服务充当用户自己装的 Ollama）
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let port: u16 = base.trim_end_matches("/v1").rsplit(':').next().unwrap().parse().unwrap();
+    let compute = Compute::new(Some(pack), port, &dir);
+    compute.spawn(Db::open_in_memory().unwrap());
+    for _ in 0..50 {
+        if compute.state() == State::External {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(compute.state(), State::External);
+    // 一个坏掉的运行时：报告原因，不反复重试到天荒地老
+    let broken = commonbot_server::compute::Pack { binary: dir.join("nope"), ..fake_pack(&dir) };
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let compute = Compute::new(Some(broken), free, &dir);
+    compute.spawn(Db::open_in_memory().unwrap());
+    tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    assert!(matches!(compute.state(), State::Failed { .. }), "{:?}", compute.state());
+}

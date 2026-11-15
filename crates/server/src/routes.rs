@@ -116,6 +116,16 @@ fn lan_addresses() -> Vec<String> {
         .unwrap_or_default()
 }
 
+/// 本机算力的状态，以及算力包里各个模型的用场。
+fn compute_json(st: &AppState) -> Value {
+    let mut v = serde_json::to_value(st.compute.state()).unwrap_or_default();
+    if let Some(pack) = &st.compute.pack {
+        v["models"] = json!(pack.info);
+        v["dir"] = json!(pack.dir.display().to_string());
+    }
+    v
+}
+
 async fn system_info(State(st): State<AppState>) -> Json<Value> {
     let addr = st.listening();
     Json(json!({
@@ -124,6 +134,7 @@ async fn system_info(State(st): State<AppState>) -> Json<Value> {
         "lan_fixed": st.listen_fixed,
         "port": addr.port(),
         "addresses": lan_addresses(),
+        "compute": compute_json(&st),
     }))
 }
 
