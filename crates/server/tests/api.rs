@@ -1192,3 +1192,121 @@ async fn published_agent_works_by_link_and_api_without_the_access_code() {
         StatusCode::UNAUTHORIZED
     );
 }
+
+// ---------- 建造师 ----------
+
+#[tokio::test]
+async fn builder_turns_an_interview_into_a_published_agent() {
+    let app = setup().await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let pid = add_provider(&app, &base, None).await;
+
+    let b = req(Method::POST, "/api/builds")
+        .json(json!({ "opening": "这个智能体给谁用，主要帮他们解决什么问题？" }))
+        .send(&app)
+        .await
+        .json();
+    let bid = b["id"].as_str().unwrap();
+    assert_eq!(
+        req(Method::POST, "/api/builds").json(json!({ "opening": "" })).send(&app).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    let say = |content: &str| {
+        let (app, path, body) = (
+            app.clone(),
+            format!("/api/builds/{bid}/messages"),
+            json!({ "content": content, "provider_id": pid, "model": "mock-large" }),
+        );
+        async move { req(Method::POST, &path).json(body).send(&app).await.events() }
+    };
+
+    // 草稿还不完整时不能试答、不能发布
+    let r = req(Method::POST, &format!("/api/builds/{bid}/test")).json(json!({ "provider_id": pid })).send(&app).await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+    assert!(r.json()["message"].as_str().unwrap().contains("draft_incomplete"));
+
+    // 访谈：每说一句，建造师回答，然后草稿更新
+    let events = say("给投标组用，帮他们解读招标文件里的资质、评分和时间要求").await;
+    let names: Vec<&str> = events.iter().map(|(n, _)| n.as_str()).collect();
+    assert_eq!(names.first(), Some(&"user"));
+    assert_eq!(&names[names.len() - 2..], ["done", "draft"]);
+    let reply = events[names.len() - 2].1["message"]["content"].as_str().unwrap();
+    assert!(reply.contains("你是「建造师」"), "the interviewer runs under its own instructions: {reply}");
+    let draft = &events.last().unwrap().1["draft"];
+    assert_eq!(draft["name"], "招标文件助手");
+    assert!(draft["duty"].as_str().unwrap().starts_with("给投标组用"));
+    assert_eq!(draft["web"], "off");
+
+    let events = say("不要预测中标，也不要帮写报价；资料里没有的可以联网查").await;
+    let draft = &events.last().unwrap().1["draft"];
+    assert_eq!(draft["out_of_scope"], "不要预测中标，也不要帮写报价；资料里没有的可以联网查");
+    assert_eq!(draft["web"], "fallback");
+
+    // 用户手动改名称；之后的访谈不再覆盖它
+    let mut edited = draft.clone();
+    edited["name"] = json!("投标小助手");
+    edited.as_object_mut().unwrap().remove("manual");
+    let r = req(Method::PUT, &format!("/api/builds/{bid}/draft")).json(edited).send(&app).await;
+    assert_eq!(r.json()["draft"]["manual"], json!(["name"]));
+    let events = say("可以了").await;
+    assert_eq!(events.last().unwrap().1["draft"]["name"], "投标小助手");
+
+    // 试答：出题、逐题作答并评判；结果保存下来
+    let r = req(Method::POST, &format!("/api/builds/{bid}/test"))
+        .json(json!({ "provider_id": pid, "model": "mock-large" }))
+        .send(&app)
+        .await;
+    let events = r.events();
+    assert_eq!(events[0].0, "tests");
+    assert_eq!(events[0].1["tests"].as_array().unwrap().len(), 3);
+    let results: Vec<(i64, Value)> = events
+        .iter()
+        .filter(|(n, _)| n == "test")
+        .map(|(_, d)| (d["index"].as_i64().unwrap(), d["test"]["pass"].clone()))
+        .collect();
+    assert_eq!(results, vec![(0, json!(true)), (1, json!(true)), (2, json!(false))]);
+    let answered = &events.iter().find(|(n, _)| n == "test").unwrap().1["test"];
+    assert!(
+        answered["answer"].as_str().unwrap().contains("你是「投标小助手」"),
+        "answers come from the drafted agent: {answered}"
+    );
+    assert_eq!(events.last().unwrap().0, "done");
+    let got = req(Method::GET, &format!("/api/builds/{bid}")).send(&app).await.json();
+    assert_eq!(got["build"]["tests"][2]["reason"], "没有说明这不归它负责");
+    assert_eq!(got["messages"].as_array().unwrap().len(), 7, "opening + 3 exchanges");
+
+    // 发布：生成智能体，固定为访谈时用的模型，带链接和密钥
+    let agent = req(Method::POST, &format!("/api/builds/{bid}/publish"))
+        .json(json!({ "provider_id": pid, "model": "mock-large" }))
+        .send(&app)
+        .await
+        .json();
+    assert_eq!(
+        (agent["name"].as_str().unwrap(), agent["model"].as_str().unwrap(), agent["web"].as_str().unwrap()),
+        ("投标小助手", "mock-large", "fallback")
+    );
+    let token = agent["public_token"].as_str().unwrap();
+    assert!(agent["api_key"].as_str().unwrap().starts_with("cb-"));
+    assert_eq!(
+        req(Method::GET, &format!("/api/public/{token}")).remote().send(&app).await.json()["name"],
+        "投标小助手"
+    );
+    let agents = req(Method::GET, "/api/agents").send(&app).await.json();
+    assert!(agents.as_array().unwrap().iter().any(|a| a["name"] == "投标小助手"));
+    assert!(agents.as_array().unwrap().iter().all(|a| a["id"] != "builder"), "the builder itself is not listed");
+
+    // 再发布一次是更新，不会多出一个；删除这次建造不影响已发布的智能体
+    let again = req(Method::POST, &format!("/api/builds/{bid}/publish"))
+        .json(json!({ "provider_id": pid }))
+        .send(&app)
+        .await
+        .json();
+    assert_eq!(again["id"], agent["id"]);
+    assert_eq!(req(Method::GET, "/api/builds").send(&app).await.json()[0]["agent_id"], agent["id"]);
+    assert_eq!(req(Method::DELETE, &format!("/api/builds/{bid}")).send(&app).await.status, StatusCode::NO_CONTENT);
+    assert_eq!(req(Method::GET, &format!("/api/builds/{bid}")).send(&app).await.status, StatusCode::NOT_FOUND);
+    assert_eq!(
+        req(Method::GET, &format!("/api/agents/{}", agent["id"].as_str().unwrap())).send(&app).await.status,
+        StatusCode::OK
+    );
+}

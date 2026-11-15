@@ -2,6 +2,7 @@
 
 pub mod agent;
 pub mod attach;
+pub mod build;
 pub mod db;
 pub mod error;
 pub mod kb;

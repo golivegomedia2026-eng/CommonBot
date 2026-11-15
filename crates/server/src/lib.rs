@@ -2,6 +2,7 @@
 
 mod access;
 mod assets;
+mod builder;
 mod chat;
 mod published;
 mod routes;

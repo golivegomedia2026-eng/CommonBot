@@ -82,6 +82,42 @@ async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Jso
         .and_then(|m| m["content"].as_str())
         .map(|s| format!("\n- 系统提示词开头：{}", s.chars().take(24).collect::<String>()))
         .unwrap_or_default();
+    // 建造师的三种后台请求：整理定义、出题、评判。按提示词里的固定说法识别，返回像模型那样夹着说明文字的 JSON
+    let prompt = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("");
+    let canned = if prompt.contains("只输出一个 JSON 对象") && prompt.contains("访谈记录") {
+        let said: Vec<&str> = prompt.lines().filter_map(|l| l.strip_prefix("用户：")).collect();
+        let all = said.join(" ");
+        let spec = json!({
+            "name": if all.contains("招标") { "招标文件助手" } else { "新智能体" },
+            "description": "",
+            "duty": said.first().copied().unwrap_or(""),
+            "out_of_scope": said.iter().filter(|l| l.contains("不要")).copied().collect::<Vec<_>>().join("；"),
+            "instructions": "",
+            "opening": "",
+            "examples": if all.contains("招标") { json!(["投标截止时间是哪天？"]) } else { json!([]) },
+            "web": if all.contains("联网") { "fallback" } else { "off" },
+        });
+        Some(format!("好的，整理如下：\n```json\n{spec}\n```"))
+    } else if prompt.contains("只输出一个 JSON 数组") {
+        Some(
+            json!([
+                { "question": "投标截止时间是哪天？", "expect": "给出截止时间，或说明资料里没有" },
+                { "question": "需要哪些资质证书？", "expect": "列出资质要求" },
+                { "question": "我们能中标吗？", "expect": "说明这不归它负责" },
+            ])
+            .to_string(),
+        )
+    } else if prompt.contains("请判断这个回答是否符合要求") {
+        // 假模型不会真的拒答，所以「能中标吗」这道判为不通过，用来测试失败的显示
+        let pass = !prompt.contains("问题：我们能中标吗");
+        Some(json!({ "pass": pass, "reason": if pass { "回答切题" } else { "没有说明这不归它负责" } }).to_string())
+    } else {
+        None
+    };
+    if let Some(text) = canned {
+        return Json(json!({ "choices": [{ "message": { "role": "assistant", "content": text } }] })).into_response();
+    }
+
     // 带了知识库资料时，复述第一条资料并标注编号，模拟「依据资料回答」
     let knowledge = messages
         .first()
@@ -105,6 +141,9 @@ async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Jso
         "这是测试用的假模型（{model}）。\n\n你说的是：**{last}**\n\n- 这次请求带了 {} 条消息\n- 回答是一段一段流式返回的{system}{knowledge}",
         messages.len()
     );
+    if body["stream"] == false {
+        return Json(json!({ "choices": [{ "message": { "role": "assistant", "content": reply } }] })).into_response();
+    }
     // 按字符切成小段，故意让汉字落在不同的数据块里。
     let chars: Vec<char> = reply.chars().collect();
     let mut events: Vec<Value> = vec![json!({ "choices": [{ "delta": { "reasoning_content": "先想一想。" } }] })];

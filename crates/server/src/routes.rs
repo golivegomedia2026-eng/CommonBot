@@ -34,6 +34,7 @@ pub fn api() -> Router<AppState> {
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         .merge(crate::chat::routes())
         .merge(crate::routes_kb::routes())
+        .merge(crate::builder::routes())
 }
 
 // ---------- 基本信息与访问码 ----------

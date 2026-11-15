@@ -51,7 +51,7 @@ pub struct AgentSummary {
     pub last_used_at: Option<i64>,
 }
 
-#[derive(Debug, Clone, Default, Deserialize)]
+#[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct AgentInput {
     pub name: String,
@@ -154,6 +154,29 @@ pub fn system_prompt(name: &str, description: &str, duty: &str, out_of_scope: &s
 }
 
 impl Agent {
+    /// 用一份还没保存的定义临时构造一个智能体（试答、建造师用）。
+    pub fn draft(id: &str, input: AgentInput) -> Self {
+        Agent {
+            id: id.to_string(),
+            name: input.name,
+            description: input.description,
+            duty: input.duty,
+            out_of_scope: input.out_of_scope,
+            instructions: input.instructions,
+            opening: input.opening,
+            examples: input.examples,
+            provider_id: input.provider_id,
+            model: input.model,
+            folders: input.folders,
+            web: if input.web.is_empty() { "off".into() } else { input.web },
+            allow_cloud: input.allow_cloud,
+            public_token: None,
+            api_key: None,
+            created_at: 0,
+            updated_at: 0,
+        }
+    }
+
     pub fn system_prompt(&self) -> String {
         system_prompt(&self.name, &self.description, &self.duty, &self.out_of_scope, &self.instructions)
     }
