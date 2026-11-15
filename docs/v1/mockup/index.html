@@ -1,0 +1,679 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommonBot 界面效果图</title>
+<!-- 效果图：演示数据，不连服务。由 web/theme 下的色卡文件内联生成，确认后再写正式界面。 -->
+<script>/* 鉴色·色境切换（复制自鉴见能力平台）：八套整体配色，可固定一套，也可跟随系统（浅色、深色各选一套）。
+ * 在 <head> 里同步执行，首屏不闪。选择只存在本机浏览器（localStorage），读写失败时用默认值。 */
+(() => {
+  const KEY = "commonbot_realm";
+  // swatch：底、框、主、点，用于配色面板里的色卡
+  const REALMS = [
+    { key: "xuanzhi", name: "宣纸", dark: false, desc: "汉白玉底 · 苍筤", swatch: ["#F8F4ED", "#F5F0E6", "#2E5D4A", "#806332"] },
+    { key: "tianqing", name: "天青", dark: false, desc: "汝窑冷釉 · 铁足暖点", swatch: ["#E8F4F8", "#2A475F", "#1661AB", "#C1651A"] },
+    { key: "qiuxiang", name: "秋香", dark: false, desc: "古籍纸色 · 朱印", swatch: ["#FBF2E3", "#FBECDE", "#8E443D", "#D92121"] },
+    { key: "zhuyue", name: "竹月", dark: false, desc: "竹林月色 · 藕丝", swatch: ["#EEF7F2", "#223E36", "#0D5E3A", "#D8B0C8"] },
+    { key: "ouhe", name: "藕荷", dark: false, desc: "杏粉绛紫 · 青矾", swatch: ["#F5E6E0", "#4B1E2F", "#8E354A", "#2C9678"] },
+    { key: "daiye", name: "黛夜", dark: true, desc: "夜读青灯 · 缃绮", swatch: ["#0F1A20", "#101F30", "#8ABCD1", "#F8C471"] },
+    { key: "mozhu", name: "墨竹", dark: true, desc: "夜竹 · 樱粉", swatch: ["#141E1B", "#15231B", "#7BC092", "#F7B7C5"] },
+    { key: "jiangye", name: "绛夜", dark: true, desc: "深绛如酒 · 天水碧", swatch: ["#2B1216", "#2D0C13", "#F7B7C5", "#12A182"] },
+  ];
+  const byKey = (k, dark) => REALMS.find((r) => r.key === k && (dark === undefined || r.dark === dark));
+  const media = window.matchMedia ? window.matchMedia("(prefers-color-scheme: dark)") : null;
+  const listeners = [];
+  let state = { realm: "xuanzhi", follow: false, light: "xuanzhi", dark: "daiye" };
+  try {
+    const saved = JSON.parse(localStorage.getItem(KEY) || "{}");
+    if (byKey(saved.realm)) state.realm = saved.realm;
+    if (typeof saved.follow === "boolean") state.follow = saved.follow;
+    if (byKey(saved.light, false)) state.light = saved.light;
+    if (byKey(saved.dark, true)) state.dark = saved.dark;
+  } catch {}
+
+  const current = () => (state.follow ? (media && media.matches ? state.dark : state.light) : state.realm);
+  function apply() {
+    const r = byKey(current()) || REALMS[0];
+    document.documentElement.dataset.realm = r.key;
+    document.documentElement.dataset.theme = r.dark ? "dark" : "light";
+    listeners.forEach((fn) => fn(get()));
+  }
+  function get() { return { ...state, current: current() }; }
+  function set(next) {
+    state = { ...state, ...next };
+    // 固定选择一套时，同时记为对应明暗的跟随默认，下次打开「跟随系统」更顺手
+    if (next.realm) {
+      const r = byKey(next.realm);
+      if (r) state[r.dark ? "dark" : "light"] = r.key;
+    }
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch {}
+    apply();
+  }
+  if (media && media.addEventListener) media.addEventListener("change", () => { if (state.follow) apply(); });
+  apply();
+
+  window.JJTheme = { get, set, REALMS, onChange: (fn) => listeners.push(fn) };
+})();
+</script>
+<style>/* 鉴色·色境 设计令牌（来自鉴见能力平台管理后台，可直接复制到新项目）
+ * 配色：鉴色·色境（中国传统色）。八套色境，每套按配色关系分角色：
+ *   底 --bg（页面） 承 --surface（卡片） 界 --line（线） 框 --nav-*（导航）
+ *   主 --accent（操作） 辅 --data-*（数据、链接） 点 --point（≤5% 的点缀：选中标记、印章、关键数字）
+ * 色量约 60·30·10：底与承六成，框与界三成，主辅点一成。色境只换颜色和装饰，不换布局。
+ * 色名见注释，取自 nevertoday/zhongguo-traditional-colors 的 742 色主列表；文字对比度均 ≥ 4.5:1。
+ * 状态由规则推导：悬停 = 主色向正文色混 12%，按下 = 混 24%，禁用 = 40% 不透明，聚焦 = 2px 主色描边。
+ * 用法：<html data-realm="xuanzhi|tianqing|qiuxiang|zhuyue|ouhe|daiye|mozhu|jiangye">，见 js/theme.js。 */
+
+/* 宣纸（浅，默认）：汉白玉底 · 苍筤主色 */
+:root, :root[data-realm="xuanzhi"] {
+  color-scheme: light;
+  --bg: #F8F4ED; --surface: #FFFEF8; --inset: #F5F0E6; --line: #DAD4CB;      /* 汉白玉 象牙白 米白 浅灰 */
+  --text: #1D1B1C; --text-2: #3B3A3E; --text-3: #424B50;                     /* 墨色 松烟墨 鸦青 */
+  --nav-bg: #F5F0E6; --nav-text: #3B3A3E; --nav-muted: #424B50; --nav-line: #DAD4CB;
+  --nav-active-bg: #EEF7F2; --nav-active-text: #2E5D4A;                       /* 月白 苍筤 */
+  --accent: #2E5D4A; --on-accent: #FFFEF8; --accent-soft: #EEF7F2;           /* 苍筤 象牙白 月白 */
+  --data-1: #2E5D4A; --data-2: #806332; --link: #2A3C5C;                      /* 苍筤 苍黄 黛蓝 */
+  --point: #806332; --seal: #2E5D4A; --kpi: #1D1B1C; --eyebrow: #806332;      /* 苍黄 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;      /* 苍筤 / 月白 */
+  --warn: #806332;   --warn-bg: #F9F4DC;    /* 苍黄 / 乳白 */
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;  /* 汉绣红 / 淡绯 */
+  --info: #2A3C5C;   --info-bg: #E6F2FF;    /* 黛蓝 / 东方既白 */
+}
+/* 天青·汝窑（浅）：霜色底，黛青导航框住冷釉，靛青主色，铁足暖褐做点缀 */
+:root[data-realm="tianqing"] {
+  --logo-bg: #E8F4F8; --logo-fg: #2A475F;
+  color-scheme: light;
+  --bg: #E8F4F8; --surface: #F0F8FF; --inset: #F2F3F4; --line: #D0DFE6;      /* 霜色 玉色 霜白 远天蓝 */
+  --text: #0F1A20; --text-2: #2B3A4F; --text-3: #2B3A4F;                     /* 墨黑 玄青 */
+  --nav-bg: #2A475F; --nav-text: #D8E3E7; --nav-muted: #C6D7DB; --nav-line: #3B5670; /* 黛青 云峰白 月白天青 */
+  --nav-active-bg: #1A3A5F; --nav-active-text: #F0F8FF;                       /* 青黛 玉色 */
+  --accent: #1661AB; --on-accent: #F0F8FF; --accent-soft: #E6F2FF;           /* 靛青 玉色 东方既白 */
+  --data-1: #1661AB; --data-2: #63BBD0; --link: #15559A;                      /* 靛青 霁青 海涛蓝 */
+  --point: #C1651A; --seal: #8B5D33; --kpi: #0F1A20; --eyebrow: #8B5D33;      /* 槟榔综 皮弁 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;      /* 苍筤 / 月白 */
+  --warn: #8B5D33;   --warn-bg: #F9F4DC;    /* 皮弁 / 乳白 */
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;  /* 汉绣红 / 淡绯 */
+  --info: #15559A;   --info-bg: #E6F2FF;    /* 海涛蓝 / 东方既白 */
+}
+/* 秋香·古籍（浅）：粉白纸色，秋香双线，檀褐主色，朱砂只用于印章 */
+:root[data-realm="qiuxiang"] {
+  --logo-bg: #D92121; --logo-fg: #FFFEF9;
+  color-scheme: light;
+  --bg: #FBF2E3; --surface: #FFFEF9; --inset: #FBECDE; --line: #DAD4CB;      /* 粉白 雪白 荷花白 浅灰 */
+  --text: #2E2014; --text-2: #553B18; --text-3: #553B18;                     /* 缁絇繶纯 焦茶绿 */
+  --nav-bg: #FBECDE; --nav-text: #2E2014; --nav-muted: #553B18; --nav-line: #DAD4CB;
+  --nav-active-bg: #FFFEF9; --nav-active-text: #8E443D;                       /* 雪白 檀褐 */
+  --accent: #8E443D; --on-accent: #FFFEF9; --accent-soft: #F9F4DC;           /* 檀褐 雪白 乳白 */
+  --data-1: #8E443D; --data-2: #3B818C; --link: #2E5D8C;                      /* 檀褐 蜻蜓蓝 石青 */
+  --point: #D92121; --seal: #D92121; --kpi: #2E2014; --eyebrow: #8E443D;      /* 朱砂红 */
+  --rule: #C3B787;                                                            /* 秋香：标题双线 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;
+  --info: #2E5D8C;   --info-bg: #E6F2FF;    /* 石青 / 东方既白 */
+}
+/* 竹月（浅）：月白底，苍绿导航，深绿主色，藕丝与葡萄酒红取互补 */
+:root[data-realm="zhuyue"] {
+  --logo-bg: #EEF7F2; --logo-fg: #0D5E3A;
+  color-scheme: light;
+  --bg: #EEF7F2; --surface: #FFFEF9; --inset: #E8F4F0; --line: #DFECD5;      /* 月白 雪白 白雪藤 艾背绿 */
+  --text: #141E1B; --text-2: #2E4B3A; --text-3: #2E4B3A;                     /* 莽丛绿 墨玉 */
+  --nav-bg: #223E36; --nav-text: #DFECD5; --nav-muted: #DFECD5; --nav-line: #2E4B3A; /* 苍绿 艾背绿 */
+  --nav-active-bg: #1A3B2E; --nav-active-text: #EEF7F2;                       /* 墨绿 月白 */
+  --accent: #0D5E3A; --on-accent: #FFFEF9; --accent-soft: #E2F0CB;           /* 深绿 雪白 霜地 */
+  --data-1: #0D5E3A; --data-2: #D8B0C8; --link: #0D5E3A;                      /* 深绿 藕丝 */
+  --point: #D8B0C8; --seal: #0D5E3A; --kpi: #0D5E3A; --eyebrow: #62102E;      /* 藕丝 葡萄酒红 */
+  --ok: #0D5E3A;     --ok-bg: #E2F0CB;      /* 深绿 / 霜地 */
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;
+  --info: #2A3C5C;   --info-bg: #E6F2FF;
+}
+/* 藕荷（浅）：浅杏粉底，海象紫导航，绛紫主色，亚丁绿与青矾绿取互补 */
+:root[data-realm="ouhe"] {
+  --logo-bg: #F8EBE6; --logo-fg: #8E354A;
+  color-scheme: light;
+  --bg: #F5E6E0; --surface: #F8F4F0; --inset: #F0D9D0; --line: #F2CAC9;      /* 浅杏粉 荼蘼白 杏粉 淡绯 */
+  --text: #2B1216; --text-2: #4B1E2F; --text-3: #4B1E2F;                     /* 李紫 海象紫 */
+  --nav-bg: #4B1E2F; --nav-text: #F8EBE6; --nav-muted: #E6D2D5; --nav-line: #5D3131; /* 海象紫 草珠红 蓟粉红 貂紫 */
+  --nav-active-bg: #8E354A; --nav-active-text: #F8EBE6;                       /* 绛紫 */
+  --accent: #8E354A; --on-accent: #F8F4F0; --accent-soft: #FEDBE1;           /* 绛紫 荼蘼白 藕粉 */
+  --data-1: #8E354A; --data-2: #428675; --link: #2E5A6F;                      /* 绛紫 亚丁绿 黛青山 */
+  --point: #2C9678; --seal: #8E354A; --kpi: #8E354A; --eyebrow: #2E5A6F;      /* 青矾绿 */
+  --ok: #2E5A6F;     --ok-bg: #E8F4F0;      /* 黛青山 / 白雪藤 */
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F8F4F0;
+  --info: #2E5A6F;   --info-bg: #E6F2FF;
+}
+/* 黛夜·青灯（深）：墨黑底，暗蓝导航，秋波蓝主色，缃绮灯火做点缀，浅绛取冷暖对照 */
+:root[data-realm="daiye"] {
+  --logo-bg: #F8C471; --logo-fg: #0F1A20;
+  color-scheme: dark;
+  --bg: #0F1A20; --surface: #1C2938; --inset: #142334; --line: #2B333E;      /* 墨黑 鸽蓝 钢青 青灰 */
+  --text: #E8F4F8; --text-2: #D8E3E7; --text-3: #86A1A7;                     /* 霜色 云峰白 蟹壳青 */
+  --nav-bg: #101F30; --nav-text: #D8E3E7; --nav-muted: #86A1A7; --nav-line: #1C2938; /* 暗蓝 */
+  --nav-active-bg: #1C2938; --nav-active-text: #E8F4F8;
+  --accent: #8ABCD1; --on-accent: #0F1A20; --accent-soft: #21373D;           /* 秋波蓝 墨黑 灰蓝 */
+  --data-1: #8ABCD1; --data-2: #D9A594; --link: #8ABCD1;                      /* 秋波蓝 浅绛 */
+  --point: #F8C471; --seal: #F8C471; --kpi: #F8C471; --eyebrow: #F8C471;      /* 缃绮 */
+  --ok: #7BC092;     --ok-bg: #1A3B32;      /* 梅子青 / 深海绿 */
+  --warn: #F8C471;   --warn-bg: #4D4030;    /* 缃绮 / 淡松烟 */
+  --danger: #F2B9B2; --danger-bg: #481E1C;  /* 粉红 / 豆沙 */
+  --info: #8ABCD1;   --info-bg: #21373D;    /* 秋波蓝 / 灰蓝 */
+}
+/* 墨竹（深）：莽丛绿底，梅子青主色，山黎豆红与樱粉取冷暖对照 */
+:root[data-realm="mozhu"] {
+  --logo-bg: #7BC092; --logo-fg: #141E1B;
+  color-scheme: dark;
+  --bg: #141E1B; --surface: #223E36; --inset: #1A3B32; --line: #2E4B3A;      /* 莽丛绿 苍绿 深海绿 墨玉 */
+  --text: #EEF7F2; --text-2: #DFECD5; --text-3: #A0D6B4;                     /* 月白 艾背绿 松花绿 */
+  --nav-bg: #15231B; --nav-text: #DFECD5; --nav-muted: #A0D6B4; --nav-line: #223E36; /* 云杉绿 */
+  --nav-active-bg: #223E36; --nav-active-text: #EEF7F2;
+  --accent: #7BC092; --on-accent: #141E1B; --accent-soft: #1A3B32;           /* 梅子青 莽丛绿 深海绿 */
+  --data-1: #7BC092; --data-2: #C27C88; --link: #7BC092;                      /* 梅子青 山黎豆红 */
+  --point: #F7B7C5; --seal: #A0D6B4; --kpi: #7BC092; --eyebrow: #F7B7C5;      /* 樱粉 松花绿 */
+  --ok: #7BC092;     --ok-bg: #1A3B32;
+  --warn: #F8C471;   --warn-bg: #4D4030;
+  --danger: #F2B9B2; --danger-bg: #481E1C;
+  --info: #C3D7DF;   --info-bg: #21373D;    /* 井天蓝 / 灰蓝 */
+}
+/* 绛夜（深）：李紫底，樱粉主色，天水碧与蓝绿在酒红底上取互补 */
+:root[data-realm="jiangye"] {
+  --logo-bg: #F7B7C5; --logo-fg: #2B1216;
+  color-scheme: dark;
+  --bg: #2B1216; --surface: #382129; --inset: #30161C; --line: #4C1F24;      /* 李紫 磨石紫 卵石紫 葡萄紫 */
+  --text: #F8EBE6; --text-2: #E6D2D5; --text-3: #E6D2D5;                     /* 草珠红 蓟粉红 */
+  --nav-bg: #2D0C13; --nav-text: #E6D2D5; --nav-muted: #E6D2D5; --nav-line: #382129; /* 茄皮紫 */
+  --nav-active-bg: #382129; --nav-active-text: #F8EBE6;
+  --accent: #F7B7C5; --on-accent: #2B1216; --accent-soft: #381924;           /* 樱粉 李紫 檀紫 */
+  --data-1: #F7B7C5; --data-2: #AED9D4; --link: #AED9D4;                      /* 樱粉 天水碧 */
+  --point: #12A182; --seal: #F7B7C5; --kpi: #F7B7C5; --eyebrow: #AED9D4;      /* 蓝绿 */
+  --ok: #B2F0D9;     --ok-bg: #1A3B32;      /* 浅薄荷绿 / 深海绿 */
+  --warn: #F8C471;   --warn-bg: #4D4030;
+  --danger: #F2B9B2; --danger-bg: #4C1F24;  /* 粉红 / 葡萄紫 */
+  --info: #AED9D4;   --info-bg: #21373D;    /* 天水碧 / 灰蓝 */
+}
+
+/* 公共：派生量与旧变量名 */
+:root {
+  --line-strong: color-mix(in srgb, var(--text) 28%, var(--surface));
+  --line-soft: color-mix(in srgb, var(--line) 55%, var(--surface));
+  --hover-bg: color-mix(in srgb, var(--text) 6%, var(--surface));
+  --mix: var(--surface);
+  --rule: var(--line);
+  --paper: var(--bg);
+  --ink: var(--text);
+  --celadon: var(--accent);
+  --celadon-soft: var(--accent-soft);
+  --indigo: var(--link);
+  --cinnabar: var(--danger);
+  --amber: var(--warn);
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --r-lg: 12px;
+  --r-md: 8px;
+  --r-sm: 5px;
+}
+
+/* Element Plus：主色与状态色指向语义色；它需要的浅色阶梯由语义色与卡片色混合得出，不另立颜色 */
+html:root {
+  --el-color-white: var(--surface);
+  --el-color-black: var(--text);
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 70%, var(--mix));
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 50%, var(--mix));
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, var(--mix));
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, var(--mix));
+  --el-color-primary-light-9: var(--accent-soft);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--accent) 80%, var(--text));
+  --el-color-success: var(--ok);
+  --el-color-success-light-3: color-mix(in srgb, var(--ok) 70%, var(--mix));
+  --el-color-success-light-5: color-mix(in srgb, var(--ok) 50%, var(--mix));
+  --el-color-success-light-7: color-mix(in srgb, var(--ok) 30%, var(--mix));
+  --el-color-success-light-8: color-mix(in srgb, var(--ok) 20%, var(--mix));
+  --el-color-success-light-9: var(--ok-bg);
+  --el-color-success-dark-2: color-mix(in srgb, var(--ok) 80%, var(--text));
+  --el-color-warning: var(--warn);
+  --el-color-warning-light-3: color-mix(in srgb, var(--warn) 70%, var(--mix));
+  --el-color-warning-light-5: color-mix(in srgb, var(--warn) 50%, var(--mix));
+  --el-color-warning-light-7: color-mix(in srgb, var(--warn) 30%, var(--mix));
+  --el-color-warning-light-8: color-mix(in srgb, var(--warn) 20%, var(--mix));
+  --el-color-warning-light-9: var(--warn-bg);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--warn) 80%, var(--text));
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: color-mix(in srgb, var(--danger) 70%, var(--mix));
+  --el-color-danger-light-5: color-mix(in srgb, var(--danger) 50%, var(--mix));
+  --el-color-danger-light-7: color-mix(in srgb, var(--danger) 30%, var(--mix));
+  --el-color-danger-light-8: color-mix(in srgb, var(--danger) 20%, var(--mix));
+  --el-color-danger-light-9: var(--danger-bg);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--danger) 80%, var(--text));
+  --el-color-error: var(--danger);
+  --el-color-error-light-9: var(--danger-bg);
+  --el-color-info: var(--text-3);
+  --el-color-info-light-3: color-mix(in srgb, var(--text-3) 70%, var(--mix));
+  --el-color-info-light-5: color-mix(in srgb, var(--text-3) 50%, var(--mix));
+  --el-color-info-light-7: color-mix(in srgb, var(--text-3) 30%, var(--mix));
+  --el-color-info-light-8: color-mix(in srgb, var(--text-3) 20%, var(--mix));
+  --el-color-info-light-9: var(--inset);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-2);
+  --el-text-color-secondary: var(--text-3);
+  --el-text-color-placeholder: var(--text-3);
+  --el-text-color-disabled: var(--line-strong);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line-soft);
+  --el-border-color-extra-light: var(--line-soft);
+  --el-border-color-dark: var(--line-strong);
+  --el-fill-color: var(--inset);
+  --el-fill-color-light: var(--inset);
+  --el-fill-color-lighter: var(--bg);
+  --el-fill-color-extra-light: var(--bg);
+  --el-fill-color-blank: var(--surface);
+  --el-mask-color: color-mix(in srgb, var(--bg) 80%, transparent);
+  --el-border-radius-base: 8px;
+  --el-font-family: var(--font-sans);
+}
+
+/* 主色按钮上的文字用 --on-accent（深色色境里是深色字） */
+.el-button--primary { --el-button-text-color: var(--on-accent); --el-button-hover-text-color: var(--on-accent); --el-button-active-text-color: var(--on-accent); }
+.el-button--danger { --el-button-text-color: var(--surface); --el-button-hover-text-color: var(--surface); }
+.el-button--primary:not(.is-plain):not(.is-link):not(.is-text) { --el-button-hover-bg-color: color-mix(in srgb, var(--accent) 88%, var(--text)); --el-button-hover-border-color: color-mix(in srgb, var(--accent) 88%, var(--text)); --el-button-active-bg-color: color-mix(in srgb, var(--accent) 76%, var(--text)); --el-button-active-border-color: color-mix(in srgb, var(--accent) 76%, var(--text)); }
+a { color: var(--link); }
+</style>
+<style>
+  * { box-sizing: border-box; }
+  body { margin: 0; background: var(--bg); color: var(--text); font: 14px/1.6 var(--font-sans); }
+  ::selection { background: var(--accent-soft); color: var(--accent); }
+  button, input, select, textarea { font: inherit; color: inherit; }
+  h1, h2, h3, p { margin: 0; }
+  .shell { display: flex; min-height: 100vh; }
+
+  /* 框：导航 */
+  .side { width: 224px; flex: none; background: var(--nav-bg); color: var(--nav-text); border-right: 1px solid var(--nav-line); padding: 20px 12px; display: flex; flex-direction: column; gap: 2px; position: sticky; top: 0; height: 100vh; }
+  .brand { display: flex; align-items: center; gap: 10px; padding: 0 8px 18px; color: var(--nav-active-text); }
+  .logo { width: 32px; height: 32px; border-radius: 8px; display: grid; place-items: center; background: var(--logo-bg, var(--accent)); color: var(--logo-fg, var(--on-accent)); font: 700 18px var(--font-serif); }
+  .brand b { font: 600 16px var(--font-serif); }
+  .group { font-size: 11px; letter-spacing: 0.1em; color: var(--nav-muted); padding: 12px 10px 4px; }
+  .link { position: relative; display: block; width: 100%; text-align: left; padding: 9px 10px 9px 22px; border: 0; border-radius: 8px; background: none; color: var(--nav-text); cursor: pointer; }
+  .link:hover { background: color-mix(in srgb, var(--nav-text) 10%, transparent); color: var(--nav-active-text); }
+  .link.on { background: var(--nav-active-bg); color: var(--nav-active-text); font-weight: 600; }
+  .link.on::before { content: ""; position: absolute; left: 8px; top: 10px; bottom: 10px; width: 3px; border-radius: 2px; background: var(--point); }
+  .host { margin-top: auto; padding: 10px; border-top: 1px solid var(--nav-line); font-size: 12px; color: var(--nav-muted); }
+  .host b { display: block; color: var(--nav-text); font-weight: 500; }
+  .dot { display: inline-block; width: 7px; height: 7px; border-radius: 50%; background: var(--point); margin-right: 6px; }
+
+  main { flex: 1; min-width: 0; padding: 26px clamp(16px, 3vw, 36px) 40px; }
+  .view { display: none; flex-direction: column; gap: 18px; }
+  .view.on { display: flex; }
+  header { display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap; padding-bottom: 12px; border-bottom: 3px double var(--rule); }
+  header .sp { margin-left: auto; }
+  .eyebrow { font-size: 12px; color: var(--eyebrow); letter-spacing: 0.08em; }
+  h1 { font: 700 26px/1.3 var(--font-serif); }
+  h2 { font: 600 16px/1.4 var(--font-serif); }
+  .muted { color: var(--text-3); font-size: 12.5px; }
+
+  .btn { height: 36px; padding: 0 16px; border-radius: 9px; border: 1px solid transparent; font-weight: 600; cursor: pointer; white-space: nowrap; }
+  .btn.primary { background: var(--accent); color: var(--on-accent); }
+  .btn.primary:hover { background: color-mix(in srgb, var(--accent) 88%, var(--text)); }
+  .btn.primary:active { background: color-mix(in srgb, var(--accent) 76%, var(--text)); }
+  .btn.ghost { background: var(--surface); color: var(--text); border-color: var(--line-strong); font-weight: 400; }
+  .btn.ghost:hover { background: var(--hover-bg); }
+  .btn.sm { height: 28px; padding: 0 10px; font-size: 12.5px; border-radius: 7px; }
+  .btn:disabled { opacity: 0.4; cursor: default; }
+  :is(.btn, .link, .realm, .seg button, .tab):focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+  .card { background: var(--surface); border: 1px solid var(--line); border-radius: 12px; padding: 16px 18px; min-width: 0; }
+  .tag { display: inline-flex; align-items: center; gap: 4px; padding: 1px 8px; border-radius: 999px; font-size: 12px; background: var(--inset); color: var(--text-2); white-space: nowrap; }
+  .tag.ok { background: var(--ok-bg); color: var(--ok); } .tag.warn { background: var(--warn-bg); color: var(--warn); }
+  .tag.err { background: var(--danger-bg); color: var(--danger); } .tag.info { background: var(--info-bg); color: var(--info); }
+  .row { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+
+  /* 智能体列表 */
+  .agents { display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr)); gap: 14px; }
+  .agent { display: flex; flex-direction: column; gap: 8px; cursor: pointer; }
+  .agent:hover { background: var(--hover-bg); }
+  .agent .top { display: flex; gap: 10px; align-items: center; }
+  .seal { width: 38px; height: 38px; flex: none; border: 1.5px solid var(--seal); color: var(--seal); border-radius: 6px; display: grid; place-items: center; font: 600 17px var(--font-serif); }
+  .agent p { color: var(--text-2); overflow-wrap: anywhere; }
+  .agent.new { border-style: dashed; border-color: var(--line-strong); align-items: center; justify-content: center; color: var(--text-3); min-height: 150px; background: none; }
+
+  /* 两栏 */
+  .cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+  .form { display: flex; flex-direction: column; gap: 14px; }
+  .field { display: flex; flex-direction: column; gap: 5px; }
+  .field > span { font-size: 12.5px; color: var(--text-3); }
+  input[type=text], select, textarea { width: 100%; padding: 7px 10px; border-radius: 8px; border: 1px solid var(--line-strong); background: var(--surface); }
+  textarea { resize: vertical; min-height: 64px; line-height: 1.6; }
+  :is(input[type=text], select, textarea):focus { outline: none; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .seg { display: inline-flex; border: 1px solid var(--line-strong); border-radius: 9px; overflow: hidden; flex-wrap: wrap; }
+  .seg button { border: 0; background: var(--surface); padding: 6px 12px; cursor: pointer; border-right: 1px solid var(--line); }
+  .seg button:last-child { border-right: 0; }
+  .seg button[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .switch { position: relative; width: 36px; height: 20px; border-radius: 999px; background: var(--line-strong); flex: none; }
+  .switch::after { content: ""; position: absolute; top: 2px; left: 2px; width: 16px; height: 16px; border-radius: 50%; background: var(--surface); }
+  .switch.on { background: var(--accent); } .switch.on::after { left: 18px; }
+  .kv { display: flex; gap: 8px; align-items: center; padding: 8px 10px; background: var(--inset); border-radius: 8px; font: 12.5px var(--font-mono); overflow-wrap: anywhere; }
+  .kv span { flex: 1; min-width: 0; }
+
+  /* 对话 */
+  .chat { display: flex; flex-direction: column; gap: 12px; padding: 0; overflow: hidden; }
+  .chat .hd { display: flex; align-items: center; gap: 8px; padding: 12px 16px; border-bottom: 1px solid var(--line); background: var(--inset); }
+  .msgs { display: flex; flex-direction: column; gap: 12px; padding: 4px 16px; }
+  .msg { max-width: 88%; padding: 9px 12px; border-radius: 12px; overflow-wrap: anywhere; }
+  .msg.me { align-self: flex-end; background: var(--accent-soft); color: var(--text); border-bottom-right-radius: 4px; }
+  .msg.bot { align-self: flex-start; background: var(--inset); border-bottom-left-radius: 4px; }
+  .cite { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 4px; font-size: 11px; background: var(--surface); border: 1px solid var(--line-strong); color: var(--link); vertical-align: 1px; }
+  .cite.web { color: var(--point); }
+  .srcs { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+  .srcs b { font-weight: 500; color: var(--text-3); font-size: 12px; }
+  .compose { display: flex; gap: 8px; padding: 12px 16px; border-top: 1px solid var(--line); }
+  .compose input { flex: 1; min-width: 0; }
+
+  /* 建造师 */
+  .steps { display: flex; gap: 6px; flex-wrap: wrap; counter-reset: s; }
+  .step { counter-increment: s; display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-3); font-size: 12.5px; }
+  .step::before { content: counter(s); width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--inset); color: var(--text-2); }
+  .step.done { color: var(--text-2); } .step.done::before { content: "✓"; background: var(--ok-bg); color: var(--ok); }
+  .step.now { border-color: var(--accent); color: var(--accent); font-weight: 600; } .step.now::before { background: var(--accent); color: var(--on-accent); }
+  .spec dl { margin: 0; display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 8px 12px; }
+  .spec dt { color: var(--text-3); font-size: 12.5px; } .spec dd { margin: 0; overflow-wrap: anywhere; }
+  .todo { color: var(--warn); }
+  .tests { display: flex; flex-direction: column; gap: 6px; }
+  .test { display: flex; gap: 8px; align-items: flex-start; padding: 8px 10px; border-radius: 8px; background: var(--inset); }
+  .test span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+
+  /* 表格 */
+  .tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+  table { width: 100%; border-collapse: collapse; }
+  th, td { text-align: left; padding: 9px 12px; border-top: 1px solid var(--line); white-space: nowrap; }
+  td.name { white-space: normal; min-width: 14em; overflow-wrap: anywhere; }
+  th { background: var(--inset); color: var(--text-3); font-weight: 500; font-size: 12.5px; border-top: 0; }
+  td.n { font-variant-numeric: tabular-nums; text-align: right; } th.n { text-align: right; }
+  tbody tr:hover { background: var(--hover-bg); }
+  .bar { width: 90px; height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+  .bar i { display: block; height: 100%; background: var(--accent); }
+  .kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; }
+  .num { font: 700 26px/1.3 var(--font-serif); color: var(--kpi); font-variant-numeric: tabular-nums; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); }
+  .tab { border: 0; background: none; padding: 8px 12px; cursor: pointer; color: var(--text-2); border-bottom: 2px solid transparent; }
+  .tab.on { color: var(--accent); border-bottom-color: var(--accent); font-weight: 600; }
+  .alert { display: flex; gap: 8px; align-items: center; padding: 9px 12px; border-radius: 8px; }
+  .alert.info { background: var(--info-bg); color: var(--info); } .alert.warn { background: var(--warn-bg); color: var(--warn); }
+  .item { display: flex; gap: 12px; align-items: center; padding: 12px 0; border-top: 1px solid var(--line-soft); flex-wrap: wrap; }
+  .item:first-of-type { border-top: 0; }
+  .item .grow { flex: 1; min-width: 12em; }
+
+  .realms { display: flex; flex-wrap: wrap; gap: 8px; }
+  .realm { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border: 1px solid var(--line); border-radius: 9px; background: var(--surface); cursor: pointer; }
+  .realm[aria-pressed="true"] { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+  .sw { display: grid; grid-template-columns: 3fr 2fr 2fr 1fr; width: 56px; height: 16px; border-radius: 4px; overflow: hidden; }
+
+  /* 手机：底部导航 */
+  .tabbar { display: none; }
+  @media (max-width: 900px) {
+    .side { display: none; }
+    .cols { grid-template-columns: 1fr; }
+    main { padding-bottom: 84px; }
+    h1 { font-size: 22px; }
+    .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); position: fixed; left: 0; right: 0; bottom: 0; background: var(--nav-bg); border-top: 1px solid var(--nav-line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); z-index: 5; }
+    .tabbar .link { text-align: center; padding: 8px 2px; font-size: 13px; }
+    .tabbar .link.on::before { left: 30%; right: 30%; top: auto; bottom: 2px; width: auto; height: 3px; }
+  }
+</style>
+</head>
+<body>
+<div class="shell">
+  <nav class="side" aria-label="主导航">
+    <div class="brand"><span class="logo">智</span><b>CommonBot</b></div>
+    <span class="group">工作台</span>
+    <button class="link on" data-go="agents">智能体</button>
+    <button class="link" data-go="builder">建造师</button>
+    <button class="link" data-go="kb">知识库</button>
+    <span class="group">设置</span>
+    <button class="link" data-go="models">模型与联网</button>
+    <button class="link" data-go="system">系统与外观</button>
+    <div class="host"><b><span class="dot"></span>本机 Spark</b>局域网访问：已开启</div>
+  </nav>
+
+  <main>
+    <!-- 智能体列表 -->
+    <section class="view on" id="agents">
+      <header>
+        <div><div class="eyebrow">工作台</div><h1>智能体</h1></div>
+        <button class="btn primary sp" data-go="builder">对话生成</button>
+        <button class="btn ghost" data-go="edit">手动新建</button>
+      </header>
+      <div class="agents">
+        <div class="card agent" data-go="edit">
+          <div class="top"><span class="seal">售</span><div><h2>售后答疑</h2><span class="muted">今天 14 次对话</span></div></div>
+          <p>回答产品安装、保修和退换货问题，依据售后手册。</p>
+          <div class="row"><span class="tag">知识库 2</span><span class="tag">只用知识库</span><span class="tag ok">已发布</span></div>
+        </div>
+        <div class="card agent" data-go="edit">
+          <div class="top"><span class="seal">标</span><div><h2>招标文件助手</h2><span class="muted">昨天 3 次对话</span></div></div>
+          <p>解读招标文件的资质、评分和时间要求，列出要准备的材料。</p>
+          <div class="row"><span class="tag">知识库 1</span><span class="tag">知识库优先</span><span class="tag ok">已发布</span></div>
+        </div>
+        <div class="card agent" data-go="edit">
+          <div class="top"><span class="seal">研</span><div><h2>行业动态</h2><span class="muted">尚未使用</span></div></div>
+          <p>联网查找行业新闻和政策，整理成带来源的简报。</p>
+          <div class="row"><span class="tag">联网</span><span class="tag info">允许云端模型</span><span class="tag">草稿</span></div>
+        </div>
+        <div class="card agent new" data-go="builder"><div style="text-align:center"><b>＋ 说说你想要什么样的智能体</b><br><span class="muted">和建造师聊几句，自动生成</span></div></div>
+      </div>
+    </section>
+
+    <!-- 智能体编辑 + 试聊 -->
+    <section class="view" id="edit">
+      <header>
+        <div><div class="eyebrow">智能体 / 编辑</div><h1>售后答疑</h1></div>
+        <span class="tag ok sp">已发布</span>
+        <button class="btn ghost">运行自测</button>
+        <button class="btn primary">保存</button>
+      </header>
+      <div class="cols">
+        <div class="card form">
+          <label class="field"><span>名称</span><input type="text" value="售后答疑"></label>
+          <label class="field"><span>负责的任务</span><textarea>回答产品安装、保修期限、退换货流程的问题，依据售后手册和保修条款。</textarea></label>
+          <label class="field"><span>不负责的范围</span><textarea>不报价，不承诺赔偿金额；遇到这类问题请对方联系人工客服。</textarea></label>
+          <div class="field"><span>回答依据</span>
+            <div class="seg"><button aria-pressed="true">只用知识库</button><button aria-pressed="false">知识库优先，不足时联网</button><button aria-pressed="false">知识库和联网都用</button></div>
+            <span class="muted">知识库里找不到依据时，直接说明没有，不猜。</span>
+          </div>
+          <div class="field"><span>知识库</span>
+            <div class="row"><span class="tag">售后手册 ×</span><span class="tag">保修条款 ×</span><button class="btn ghost sm">＋ 添加</button></div>
+          </div>
+          <label class="field"><span>模型</span><select><option>本机 · 日常模型（默认）</option><option>本机 · 强推理模型</option><option>云端后备（需在设置中添加）</option></select></label>
+          <div class="row"><span class="switch"></span><span>本机模型不可用时，允许改用云端模型</span></div>
+          <div class="field"><span>独立使用</span>
+            <div class="kv"><span>http://spark.local:8600/a/shouhou</span><button class="btn ghost sm">复制链接</button></div>
+            <div class="kv"><span>API 密钥 cb-····················3f9a</span><button class="btn ghost sm">复制</button><button class="btn ghost sm">重新生成</button></div>
+          </div>
+        </div>
+        <div class="card chat">
+          <div class="hd"><h2>试聊</h2><span class="muted">改动保存前也可以试</span><button class="btn ghost sm" style="margin-left:auto">清空</button></div>
+          <div class="msgs">
+            <div class="msg me">买了 14 个月，屏幕坏了还能保修吗？</div>
+            <div class="msg bot">可以。整机保修 12 个月，但屏幕属于主要部件，保修 24 个月 <span class="cite">1</span>。请准备购买凭证，在服务页提交报修 <span class="cite">2</span>。
+              <div class="srcs"><b>知识库</b><span><span class="cite">1</span> 保修条款.pdf · 第 3 页</span><span><span class="cite">2</span> 售后手册.docx · 4.2 报修流程</span></div>
+            </div>
+            <div class="msg me">那人为摔坏的能赔多少钱？</div>
+            <div class="msg bot">赔偿金额不在我负责的范围内，请联系人工客服确认。保修条款里写明人为损坏不在保修内 <span class="cite">1</span>。
+              <div class="srcs"><b>知识库</b><span><span class="cite">1</span> 保修条款.pdf · 第 5 页</span></div>
+            </div>
+          </div>
+          <div class="compose"><input type="text" placeholder="输入问题试一试"><button class="btn primary">发送</button></div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 建造师 -->
+    <section class="view" id="builder">
+      <header>
+        <div><div class="eyebrow">对话生成智能体</div><h1>建造师</h1></div>
+        <div class="steps sp"><span class="step done">访谈</span><span class="step done">整理</span><span class="step now">试答</span><span class="step">发布</span></div>
+      </header>
+      <div class="cols">
+        <div class="card chat">
+          <div class="hd"><h2>和建造师说</h2><span class="muted">可以贴样例、传资料</span></div>
+          <div class="msgs">
+            <div class="msg bot">这个智能体给谁用，主要帮他们解决什么问题？</div>
+            <div class="msg me">给我们投标组用。每次拿到招标文件要有人从头读一遍，找资质要求、评分办法、截止时间，很费时间。</div>
+            <div class="msg bot">明白。它需要读你们上传的招标文件。还要不要联网查招标公告的更正通知？</div>
+            <div class="msg me">要，但以文件为准，联网的要标出来。</div>
+            <div class="msg bot">好。有没有它不该做的事？比如替你们判断能不能中标。</div>
+            <div class="msg me">不要预测中标，也不要帮写报价。</div>
+            <div class="msg bot">已整理成定义，并用 4 个问题试答，其中 1 个没通过：扫描件里的评分表没识别完整。要我改用更细的表格识别再试一次吗？</div>
+          </div>
+          <div class="compose"><input type="text" placeholder="继续说，或者说「可以了」"><button class="btn primary">发送</button></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="card spec">
+            <div class="row" style="margin-bottom:12px"><h2>智能体定义（草稿）</h2><button class="btn ghost sm" style="margin-left:auto">手动修改</button></div>
+            <dl>
+              <dt>名称</dt><dd>招标文件助手</dd>
+              <dt>使用者</dt><dd>投标组</dd>
+              <dt>负责的任务</dt><dd>解读招标文件的资质要求、评分办法、时间节点，列出要准备的材料清单。</dd>
+              <dt>不负责</dt><dd>不预测中标结果，不撰写报价。</dd>
+              <dt>回答依据</dt><dd>知识库优先，不足时联网；联网内容单独标注。</dd>
+              <dt>知识库</dt><dd>招标文件（已上传 3 份）</dd>
+              <dt>开场白</dt><dd class="todo">还没定 · 建造师会在发布前问你</dd>
+            </dl>
+          </div>
+          <div class="card">
+            <div class="row" style="margin-bottom:10px"><h2>试答</h2><span class="muted">3 / 4 通过</span><button class="btn ghost sm" style="margin-left:auto">再试一次</button></div>
+            <div class="tests">
+              <div class="test"><span>投标截止时间是哪天？</span><span class="tag ok">✓ 通过</span></div>
+              <div class="test"><span>需要哪些资质证书？</span><span class="tag ok">✓ 通过</span></div>
+              <div class="test"><span>技术分和商务分各占多少？</span><span class="tag err">× 评分表不完整</span></div>
+              <div class="test"><span>我们能中标吗？</span><span class="tag ok">✓ 按规定婉拒</span></div>
+            </div>
+            <div class="row" style="margin-top:14px"><button class="btn primary">发布为智能体</button><span class="muted">发布后有独立链接和 API 密钥</span></div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 知识库 -->
+    <section class="view" id="kb">
+      <header>
+        <div><div class="eyebrow">知识库 / 招标文件</div><h1>招标文件</h1></div>
+        <button class="btn ghost sp">检索测试</button>
+        <button class="btn primary">上传文档</button>
+      </header>
+      <div class="kpis">
+        <div class="card"><span class="muted">文档</span><div class="num">1,284</div><span class="muted">其中扫描件 312</span></div>
+        <div class="card"><span class="muted">片段</span><div class="num">86,410</div><span class="muted">已全部向量化</span></div>
+        <div class="card"><span class="muted">排队中</span><div class="num">7</div><span class="muted">预计 6 分钟</span></div>
+        <div class="card" style="border-color: var(--point)"><span class="muted">失败</span><div class="num">2</div><span class="muted">可重试</span></div>
+      </div>
+      <div class="tbl"><table>
+        <thead><tr><th>文档</th><th>类型</th><th class="n">页数</th><th class="n">片段</th><th>状态</th><th></th></tr></thead>
+        <tbody>
+          <tr><td class="name">某市政务云二期招标文件.pdf</td><td>PDF</td><td class="n">148</td><td class="n">612</td><td><span class="tag ok">✓ 已入库</span></td><td><button class="btn ghost sm">查看片段</button></td></tr>
+          <tr><td class="name">评分办法（盖章扫描）.pdf</td><td>扫描件</td><td class="n">12</td><td class="n">—</td><td><span class="bar"><i style="width:60%"></i></span>文字识别 60%</td><td><button class="btn ghost sm">暂停</button></td></tr>
+          <tr><td class="name">更正公告 第 2 号.docx</td><td>Word</td><td class="n">3</td><td class="n">—</td><td><span class="tag">排队中</span></td><td></td></tr>
+          <tr><td class="name">资质证书合集.zip</td><td>压缩包</td><td class="n">—</td><td class="n">—</td><td><span class="tag err">× 有密码，无法解压</span></td><td><button class="btn ghost sm">重试</button></td></tr>
+          <tr><td class="name">历年中标公告汇总.xlsx</td><td>表格</td><td class="n">—</td><td class="n">2,304</td><td><span class="tag ok">✓ 已入库</span></td><td><button class="btn ghost sm">查看片段</button></td></tr>
+        </tbody>
+      </table></div>
+    </section>
+
+    <!-- 模型与联网 -->
+    <section class="view" id="models">
+      <header><div><div class="eyebrow">设置</div><h1>模型与联网</h1></div></header>
+      <div class="cols">
+        <div class="card">
+          <div class="row"><h2>本机模型</h2><span class="tag ok">推理服务正常</span><button class="btn ghost sm" style="margin-left:auto">立即检测</button></div>
+          <div class="item"><div class="grow"><b>日常模型</b><div class="muted">用于普通问答 · 已加载 · 约 38 字/秒</div></div><button class="btn ghost sm">更换</button></div>
+          <div class="item"><div class="grow"><b>强推理模型</b><div class="muted">用于建造师整理定义 · 按需加载</div></div><button class="btn ghost sm">更换</button></div>
+          <div class="item"><div class="grow"><b>向量化与重排</b><div class="muted">知识库检索用 · 已加载</div></div><button class="btn ghost sm">更换</button></div>
+          <div class="item"><div class="grow"><b>文字识别</b><div class="muted">扫描件入库用 · 已安装</div></div><button class="btn ghost sm">检测</button></div>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="card">
+            <div class="row"><h2>云端后备模型</h2><span class="tag">未添加</span></div>
+            <p class="muted" style="margin:8px 0 12px">默认全部用本机模型。添加后，只有勾选了「允许云端」的智能体才会用到，回答上会标明。</p>
+            <button class="btn ghost">＋ 添加云端模型</button>
+          </div>
+          <div class="card">
+            <div class="row"><h2>联网搜索</h2><span class="switch on" style="margin-left:auto"></span></div>
+            <div class="item"><div class="grow"><b>自建搜索</b><div class="muted">聚合多个搜索引擎，不需要密钥</div></div><span class="tag ok">可用</span></div>
+            <div class="item"><div class="grow"><b>搜索接口</b><div class="muted">填入密钥后可作为第二来源</div></div><button class="btn ghost sm">配置</button></div>
+            <div class="alert info" style="margin-top:8px">网页内容只当资料引用，不会当作指令执行。</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 系统与外观 -->
+    <section class="view" id="system">
+      <header><div><div class="eyebrow">设置</div><h1>系统与外观</h1></div></header>
+      <div class="cols">
+        <div class="card">
+          <h2>局域网访问</h2>
+          <div class="item"><div class="grow"><b>允许其他设备访问</b><div class="muted">关闭时只有这台机器能用</div></div><span class="switch on"></span></div>
+          <div class="item"><div class="grow"><b>访问地址</b><div class="kv" style="margin-top:6px"><span>http://spark.local:8600</span><button class="btn ghost sm">复制</button><button class="btn ghost sm">二维码</button></div></div></div>
+          <div class="item"><div class="grow"><b>访问码</b><div class="muted">其他电脑、手机第一次连接时输入</div></div><button class="btn ghost sm">查看</button><button class="btn ghost sm">更换</button></div>
+          <div class="item"><div class="grow"><b>版本</b><div class="muted">0.1.0 · 已是最新</div></div><button class="btn ghost sm">检查更新</button></div>
+        </div>
+        <div class="card">
+          <h2>外观与语言</h2>
+          <div class="item"><div class="grow"><b>语言</b></div><div class="seg"><button aria-pressed="true">简体中文</button><button aria-pressed="false">繁體中文</button><button aria-pressed="false">English</button><button aria-pressed="false">日本語</button></div></div>
+          <div class="item" style="align-items:flex-start"><div class="grow"><b>色境</b><div class="muted">点一下换整套配色，布局不变</div></div></div>
+          <div class="realms" id="realms"></div>
+        </div>
+      </div>
+    </section>
+  </main>
+</div>
+
+<nav class="tabbar" aria-label="主导航">
+  <button class="link on" data-go="agents">智能体</button>
+  <button class="link" data-go="builder">建造师</button>
+  <button class="link" data-go="kb">知识库</button>
+  <button class="link" data-go="system">设置</button>
+</nav>
+
+<script>
+  function go(id) {
+    document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
+    const nav = id === "edit" ? "agents" : id;
+    document.querySelectorAll("nav .link").forEach((l) => {
+      const on = l.dataset.go === nav || (nav === "models" && l.dataset.go === "system" && l.closest(".tabbar"));
+      l.classList.toggle("on", !!on);
+    });
+    window.scrollTo(0, 0);
+    try { history.replaceState(null, "", "#" + id); } catch {}
+  }
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-go]");
+    if (t) go(t.dataset.go);
+    const s = e.target.closest(".seg button");
+    if (s) s.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === s)));
+    const w = e.target.closest(".switch");
+    if (w) w.classList.toggle("on");
+  });
+  if (location.hash && document.getElementById(location.hash.slice(1))) go(location.hash.slice(1));
+
+  const box = document.getElementById("realms");
+  function draw() {
+    const cur = JJTheme.get().current;
+    box.innerHTML = "";
+    JJTheme.REALMS.forEach((r) => {
+      const b = document.createElement("button");
+      b.className = "realm"; b.type = "button"; b.setAttribute("aria-pressed", String(cur === r.key));
+      b.innerHTML = `<span class="sw">${r.swatch.map((c) => `<i style="background:${c}"></i>`).join("")}</span>${r.name}${r.dark ? "（深）" : ""}`;
+      b.onclick = () => JJTheme.set({ realm: r.key, follow: false });
+      box.appendChild(b);
+    });
+  }
+  JJTheme.onChange(draw); draw();
+</script>
+</body>
+</html>

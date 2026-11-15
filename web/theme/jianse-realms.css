@@ -1,0 +1,228 @@
+/* 鉴色·色境 设计令牌（来自鉴见能力平台管理后台，可直接复制到新项目）
+ * 配色：鉴色·色境（中国传统色）。八套色境，每套按配色关系分角色：
+ *   底 --bg（页面） 承 --surface（卡片） 界 --line（线） 框 --nav-*（导航）
+ *   主 --accent（操作） 辅 --data-*（数据、链接） 点 --point（≤5% 的点缀：选中标记、印章、关键数字）
+ * 色量约 60·30·10：底与承六成，框与界三成，主辅点一成。色境只换颜色和装饰，不换布局。
+ * 色名见注释，取自 nevertoday/zhongguo-traditional-colors 的 742 色主列表；文字对比度均 ≥ 4.5:1。
+ * 状态由规则推导：悬停 = 主色向正文色混 12%，按下 = 混 24%，禁用 = 40% 不透明，聚焦 = 2px 主色描边。
+ * 用法：<html data-realm="xuanzhi|tianqing|qiuxiang|zhuyue|ouhe|daiye|mozhu|jiangye">，见 js/theme.js。 */
+
+/* 宣纸（浅，默认）：汉白玉底 · 苍筤主色 */
+:root, :root[data-realm="xuanzhi"] {
+  color-scheme: light;
+  --bg: #F8F4ED; --surface: #FFFEF8; --inset: #F5F0E6; --line: #DAD4CB;      /* 汉白玉 象牙白 米白 浅灰 */
+  --text: #1D1B1C; --text-2: #3B3A3E; --text-3: #424B50;                     /* 墨色 松烟墨 鸦青 */
+  --nav-bg: #F5F0E6; --nav-text: #3B3A3E; --nav-muted: #424B50; --nav-line: #DAD4CB;
+  --nav-active-bg: #EEF7F2; --nav-active-text: #2E5D4A;                       /* 月白 苍筤 */
+  --accent: #2E5D4A; --on-accent: #FFFEF8; --accent-soft: #EEF7F2;           /* 苍筤 象牙白 月白 */
+  --data-1: #2E5D4A; --data-2: #806332; --link: #2A3C5C;                      /* 苍筤 苍黄 黛蓝 */
+  --point: #806332; --seal: #2E5D4A; --kpi: #1D1B1C; --eyebrow: #806332;      /* 苍黄 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;      /* 苍筤 / 月白 */
+  --warn: #806332;   --warn-bg: #F9F4DC;    /* 苍黄 / 乳白 */
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;  /* 汉绣红 / 淡绯 */
+  --info: #2A3C5C;   --info-bg: #E6F2FF;    /* 黛蓝 / 东方既白 */
+}
+/* 天青·汝窑（浅）：霜色底，黛青导航框住冷釉，靛青主色，铁足暖褐做点缀 */
+:root[data-realm="tianqing"] {
+  --logo-bg: #E8F4F8; --logo-fg: #2A475F;
+  color-scheme: light;
+  --bg: #E8F4F8; --surface: #F0F8FF; --inset: #F2F3F4; --line: #D0DFE6;      /* 霜色 玉色 霜白 远天蓝 */
+  --text: #0F1A20; --text-2: #2B3A4F; --text-3: #2B3A4F;                     /* 墨黑 玄青 */
+  --nav-bg: #2A475F; --nav-text: #D8E3E7; --nav-muted: #C6D7DB; --nav-line: #3B5670; /* 黛青 云峰白 月白天青 */
+  --nav-active-bg: #1A3A5F; --nav-active-text: #F0F8FF;                       /* 青黛 玉色 */
+  --accent: #1661AB; --on-accent: #F0F8FF; --accent-soft: #E6F2FF;           /* 靛青 玉色 东方既白 */
+  --data-1: #1661AB; --data-2: #63BBD0; --link: #15559A;                      /* 靛青 霁青 海涛蓝 */
+  --point: #C1651A; --seal: #8B5D33; --kpi: #0F1A20; --eyebrow: #8B5D33;      /* 槟榔综 皮弁 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;      /* 苍筤 / 月白 */
+  --warn: #8B5D33;   --warn-bg: #F9F4DC;    /* 皮弁 / 乳白 */
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;  /* 汉绣红 / 淡绯 */
+  --info: #15559A;   --info-bg: #E6F2FF;    /* 海涛蓝 / 东方既白 */
+}
+/* 秋香·古籍（浅）：粉白纸色，秋香双线，檀褐主色，朱砂只用于印章 */
+:root[data-realm="qiuxiang"] {
+  --logo-bg: #D92121; --logo-fg: #FFFEF9;
+  color-scheme: light;
+  --bg: #FBF2E3; --surface: #FFFEF9; --inset: #FBECDE; --line: #DAD4CB;      /* 粉白 雪白 荷花白 浅灰 */
+  --text: #2E2014; --text-2: #553B18; --text-3: #553B18;                     /* 缁絇繶纯 焦茶绿 */
+  --nav-bg: #FBECDE; --nav-text: #2E2014; --nav-muted: #553B18; --nav-line: #DAD4CB;
+  --nav-active-bg: #FFFEF9; --nav-active-text: #8E443D;                       /* 雪白 檀褐 */
+  --accent: #8E443D; --on-accent: #FFFEF9; --accent-soft: #F9F4DC;           /* 檀褐 雪白 乳白 */
+  --data-1: #8E443D; --data-2: #3B818C; --link: #2E5D8C;                      /* 檀褐 蜻蜓蓝 石青 */
+  --point: #D92121; --seal: #D92121; --kpi: #2E2014; --eyebrow: #8E443D;      /* 朱砂红 */
+  --rule: #C3B787;                                                            /* 秋香：标题双线 */
+  --ok: #2E5D4A;     --ok-bg: #EEF7F2;
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;
+  --info: #2E5D8C;   --info-bg: #E6F2FF;    /* 石青 / 东方既白 */
+}
+/* 竹月（浅）：月白底，苍绿导航，深绿主色，藕丝与葡萄酒红取互补 */
+:root[data-realm="zhuyue"] {
+  --logo-bg: #EEF7F2; --logo-fg: #0D5E3A;
+  color-scheme: light;
+  --bg: #EEF7F2; --surface: #FFFEF9; --inset: #E8F4F0; --line: #DFECD5;      /* 月白 雪白 白雪藤 艾背绿 */
+  --text: #141E1B; --text-2: #2E4B3A; --text-3: #2E4B3A;                     /* 莽丛绿 墨玉 */
+  --nav-bg: #223E36; --nav-text: #DFECD5; --nav-muted: #DFECD5; --nav-line: #2E4B3A; /* 苍绿 艾背绿 */
+  --nav-active-bg: #1A3B2E; --nav-active-text: #EEF7F2;                       /* 墨绿 月白 */
+  --accent: #0D5E3A; --on-accent: #FFFEF9; --accent-soft: #E2F0CB;           /* 深绿 雪白 霜地 */
+  --data-1: #0D5E3A; --data-2: #D8B0C8; --link: #0D5E3A;                      /* 深绿 藕丝 */
+  --point: #D8B0C8; --seal: #0D5E3A; --kpi: #0D5E3A; --eyebrow: #62102E;      /* 藕丝 葡萄酒红 */
+  --ok: #0D5E3A;     --ok-bg: #E2F0CB;      /* 深绿 / 霜地 */
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F2CAC9;
+  --info: #2A3C5C;   --info-bg: #E6F2FF;
+}
+/* 藕荷（浅）：浅杏粉底，海象紫导航，绛紫主色，亚丁绿与青矾绿取互补 */
+:root[data-realm="ouhe"] {
+  --logo-bg: #F8EBE6; --logo-fg: #8E354A;
+  color-scheme: light;
+  --bg: #F5E6E0; --surface: #F8F4F0; --inset: #F0D9D0; --line: #F2CAC9;      /* 浅杏粉 荼蘼白 杏粉 淡绯 */
+  --text: #2B1216; --text-2: #4B1E2F; --text-3: #4B1E2F;                     /* 李紫 海象紫 */
+  --nav-bg: #4B1E2F; --nav-text: #F8EBE6; --nav-muted: #E6D2D5; --nav-line: #5D3131; /* 海象紫 草珠红 蓟粉红 貂紫 */
+  --nav-active-bg: #8E354A; --nav-active-text: #F8EBE6;                       /* 绛紫 */
+  --accent: #8E354A; --on-accent: #F8F4F0; --accent-soft: #FEDBE1;           /* 绛紫 荼蘼白 藕粉 */
+  --data-1: #8E354A; --data-2: #428675; --link: #2E5A6F;                      /* 绛紫 亚丁绿 黛青山 */
+  --point: #2C9678; --seal: #8E354A; --kpi: #8E354A; --eyebrow: #2E5A6F;      /* 青矾绿 */
+  --ok: #2E5A6F;     --ok-bg: #E8F4F0;      /* 黛青山 / 白雪藤 */
+  --warn: #806332;   --warn-bg: #F9F4DC;
+  --danger: #9E2F2F; --danger-bg: #F8F4F0;
+  --info: #2E5A6F;   --info-bg: #E6F2FF;
+}
+/* 黛夜·青灯（深）：墨黑底，暗蓝导航，秋波蓝主色，缃绮灯火做点缀，浅绛取冷暖对照 */
+:root[data-realm="daiye"] {
+  --logo-bg: #F8C471; --logo-fg: #0F1A20;
+  color-scheme: dark;
+  --bg: #0F1A20; --surface: #1C2938; --inset: #142334; --line: #2B333E;      /* 墨黑 鸽蓝 钢青 青灰 */
+  --text: #E8F4F8; --text-2: #D8E3E7; --text-3: #86A1A7;                     /* 霜色 云峰白 蟹壳青 */
+  --nav-bg: #101F30; --nav-text: #D8E3E7; --nav-muted: #86A1A7; --nav-line: #1C2938; /* 暗蓝 */
+  --nav-active-bg: #1C2938; --nav-active-text: #E8F4F8;
+  --accent: #8ABCD1; --on-accent: #0F1A20; --accent-soft: #21373D;           /* 秋波蓝 墨黑 灰蓝 */
+  --data-1: #8ABCD1; --data-2: #D9A594; --link: #8ABCD1;                      /* 秋波蓝 浅绛 */
+  --point: #F8C471; --seal: #F8C471; --kpi: #F8C471; --eyebrow: #F8C471;      /* 缃绮 */
+  --ok: #7BC092;     --ok-bg: #1A3B32;      /* 梅子青 / 深海绿 */
+  --warn: #F8C471;   --warn-bg: #4D4030;    /* 缃绮 / 淡松烟 */
+  --danger: #F2B9B2; --danger-bg: #481E1C;  /* 粉红 / 豆沙 */
+  --info: #8ABCD1;   --info-bg: #21373D;    /* 秋波蓝 / 灰蓝 */
+}
+/* 墨竹（深）：莽丛绿底，梅子青主色，山黎豆红与樱粉取冷暖对照 */
+:root[data-realm="mozhu"] {
+  --logo-bg: #7BC092; --logo-fg: #141E1B;
+  color-scheme: dark;
+  --bg: #141E1B; --surface: #223E36; --inset: #1A3B32; --line: #2E4B3A;      /* 莽丛绿 苍绿 深海绿 墨玉 */
+  --text: #EEF7F2; --text-2: #DFECD5; --text-3: #A0D6B4;                     /* 月白 艾背绿 松花绿 */
+  --nav-bg: #15231B; --nav-text: #DFECD5; --nav-muted: #A0D6B4; --nav-line: #223E36; /* 云杉绿 */
+  --nav-active-bg: #223E36; --nav-active-text: #EEF7F2;
+  --accent: #7BC092; --on-accent: #141E1B; --accent-soft: #1A3B32;           /* 梅子青 莽丛绿 深海绿 */
+  --data-1: #7BC092; --data-2: #C27C88; --link: #7BC092;                      /* 梅子青 山黎豆红 */
+  --point: #F7B7C5; --seal: #A0D6B4; --kpi: #7BC092; --eyebrow: #F7B7C5;      /* 樱粉 松花绿 */
+  --ok: #7BC092;     --ok-bg: #1A3B32;
+  --warn: #F8C471;   --warn-bg: #4D4030;
+  --danger: #F2B9B2; --danger-bg: #481E1C;
+  --info: #C3D7DF;   --info-bg: #21373D;    /* 井天蓝 / 灰蓝 */
+}
+/* 绛夜（深）：李紫底，樱粉主色，天水碧与蓝绿在酒红底上取互补 */
+:root[data-realm="jiangye"] {
+  --logo-bg: #F7B7C5; --logo-fg: #2B1216;
+  color-scheme: dark;
+  --bg: #2B1216; --surface: #382129; --inset: #30161C; --line: #4C1F24;      /* 李紫 磨石紫 卵石紫 葡萄紫 */
+  --text: #F8EBE6; --text-2: #E6D2D5; --text-3: #E6D2D5;                     /* 草珠红 蓟粉红 */
+  --nav-bg: #2D0C13; --nav-text: #E6D2D5; --nav-muted: #E6D2D5; --nav-line: #382129; /* 茄皮紫 */
+  --nav-active-bg: #382129; --nav-active-text: #F8EBE6;
+  --accent: #F7B7C5; --on-accent: #2B1216; --accent-soft: #381924;           /* 樱粉 李紫 檀紫 */
+  --data-1: #F7B7C5; --data-2: #AED9D4; --link: #AED9D4;                      /* 樱粉 天水碧 */
+  --point: #12A182; --seal: #F7B7C5; --kpi: #F7B7C5; --eyebrow: #AED9D4;      /* 蓝绿 */
+  --ok: #B2F0D9;     --ok-bg: #1A3B32;      /* 浅薄荷绿 / 深海绿 */
+  --warn: #F8C471;   --warn-bg: #4D4030;
+  --danger: #F2B9B2; --danger-bg: #4C1F24;  /* 粉红 / 葡萄紫 */
+  --info: #AED9D4;   --info-bg: #21373D;    /* 天水碧 / 灰蓝 */
+}
+
+/* 公共：派生量与旧变量名 */
+:root {
+  --line-strong: color-mix(in srgb, var(--text) 28%, var(--surface));
+  --line-soft: color-mix(in srgb, var(--line) 55%, var(--surface));
+  --hover-bg: color-mix(in srgb, var(--text) 6%, var(--surface));
+  --mix: var(--surface);
+  --rule: var(--line);
+  --paper: var(--bg);
+  --ink: var(--text);
+  --celadon: var(--accent);
+  --celadon-soft: var(--accent-soft);
+  --indigo: var(--link);
+  --cinnabar: var(--danger);
+  --amber: var(--warn);
+  --font-sans: "PingFang SC", "Hiragino Sans GB", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif;
+  --font-serif: "Songti SC", "STSong", "Noto Serif CJK SC", "Source Han Serif SC", "SimSun", serif;
+  --font-mono: "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+  --r-lg: 12px;
+  --r-md: 8px;
+  --r-sm: 5px;
+}
+
+/* Element Plus：主色与状态色指向语义色；它需要的浅色阶梯由语义色与卡片色混合得出，不另立颜色 */
+html:root {
+  --el-color-white: var(--surface);
+  --el-color-black: var(--text);
+  --el-color-primary: var(--accent);
+  --el-color-primary-light-3: color-mix(in srgb, var(--accent) 70%, var(--mix));
+  --el-color-primary-light-5: color-mix(in srgb, var(--accent) 50%, var(--mix));
+  --el-color-primary-light-7: color-mix(in srgb, var(--accent) 30%, var(--mix));
+  --el-color-primary-light-8: color-mix(in srgb, var(--accent) 20%, var(--mix));
+  --el-color-primary-light-9: var(--accent-soft);
+  --el-color-primary-dark-2: color-mix(in srgb, var(--accent) 80%, var(--text));
+  --el-color-success: var(--ok);
+  --el-color-success-light-3: color-mix(in srgb, var(--ok) 70%, var(--mix));
+  --el-color-success-light-5: color-mix(in srgb, var(--ok) 50%, var(--mix));
+  --el-color-success-light-7: color-mix(in srgb, var(--ok) 30%, var(--mix));
+  --el-color-success-light-8: color-mix(in srgb, var(--ok) 20%, var(--mix));
+  --el-color-success-light-9: var(--ok-bg);
+  --el-color-success-dark-2: color-mix(in srgb, var(--ok) 80%, var(--text));
+  --el-color-warning: var(--warn);
+  --el-color-warning-light-3: color-mix(in srgb, var(--warn) 70%, var(--mix));
+  --el-color-warning-light-5: color-mix(in srgb, var(--warn) 50%, var(--mix));
+  --el-color-warning-light-7: color-mix(in srgb, var(--warn) 30%, var(--mix));
+  --el-color-warning-light-8: color-mix(in srgb, var(--warn) 20%, var(--mix));
+  --el-color-warning-light-9: var(--warn-bg);
+  --el-color-warning-dark-2: color-mix(in srgb, var(--warn) 80%, var(--text));
+  --el-color-danger: var(--danger);
+  --el-color-danger-light-3: color-mix(in srgb, var(--danger) 70%, var(--mix));
+  --el-color-danger-light-5: color-mix(in srgb, var(--danger) 50%, var(--mix));
+  --el-color-danger-light-7: color-mix(in srgb, var(--danger) 30%, var(--mix));
+  --el-color-danger-light-8: color-mix(in srgb, var(--danger) 20%, var(--mix));
+  --el-color-danger-light-9: var(--danger-bg);
+  --el-color-danger-dark-2: color-mix(in srgb, var(--danger) 80%, var(--text));
+  --el-color-error: var(--danger);
+  --el-color-error-light-9: var(--danger-bg);
+  --el-color-info: var(--text-3);
+  --el-color-info-light-3: color-mix(in srgb, var(--text-3) 70%, var(--mix));
+  --el-color-info-light-5: color-mix(in srgb, var(--text-3) 50%, var(--mix));
+  --el-color-info-light-7: color-mix(in srgb, var(--text-3) 30%, var(--mix));
+  --el-color-info-light-8: color-mix(in srgb, var(--text-3) 20%, var(--mix));
+  --el-color-info-light-9: var(--inset);
+  --el-bg-color: var(--surface);
+  --el-bg-color-page: var(--bg);
+  --el-bg-color-overlay: var(--surface);
+  --el-text-color-primary: var(--text);
+  --el-text-color-regular: var(--text-2);
+  --el-text-color-secondary: var(--text-3);
+  --el-text-color-placeholder: var(--text-3);
+  --el-text-color-disabled: var(--line-strong);
+  --el-border-color: var(--line);
+  --el-border-color-light: var(--line);
+  --el-border-color-lighter: var(--line-soft);
+  --el-border-color-extra-light: var(--line-soft);
+  --el-border-color-dark: var(--line-strong);
+  --el-fill-color: var(--inset);
+  --el-fill-color-light: var(--inset);
+  --el-fill-color-lighter: var(--bg);
+  --el-fill-color-extra-light: var(--bg);
+  --el-fill-color-blank: var(--surface);
+  --el-mask-color: color-mix(in srgb, var(--bg) 80%, transparent);
+  --el-border-radius-base: 8px;
+  --el-font-family: var(--font-sans);
+}
+
+/* 主色按钮上的文字用 --on-accent（深色色境里是深色字） */
+.el-button--primary { --el-button-text-color: var(--on-accent); --el-button-hover-text-color: var(--on-accent); --el-button-active-text-color: var(--on-accent); }
+.el-button--danger { --el-button-text-color: var(--surface); --el-button-hover-text-color: var(--surface); }
+.el-button--primary:not(.is-plain):not(.is-link):not(.is-text) { --el-button-hover-bg-color: color-mix(in srgb, var(--accent) 88%, var(--text)); --el-button-hover-border-color: color-mix(in srgb, var(--accent) 88%, var(--text)); --el-button-active-bg-color: color-mix(in srgb, var(--accent) 76%, var(--text)); --el-button-active-border-color: color-mix(in srgb, var(--accent) 76%, var(--text)); }
+a { color: var(--link); }
