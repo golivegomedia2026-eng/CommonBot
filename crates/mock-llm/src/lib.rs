@@ -51,7 +51,8 @@ async fn models(State(cfg): State<MockConfig>, headers: HeaderMap) -> Response {
     if !authorized(&cfg, &headers) {
         return (StatusCode::UNAUTHORIZED, Json(json!({ "error": { "message": "bad key" } }))).into_response();
     }
-    Json(json!({ "data": [{ "id": "mock-small" }, { "id": "mock-large" }] })).into_response()
+    Json(json!({ "data": [{ "id": "mock-small" }, { "id": "mock-large" }, { "id": "mock-embed" }, { "id": "mock-vision" }] }))
+        .into_response()
 }
 
 async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Json<Value>) -> Response {

@@ -11,4 +11,9 @@ hooks.onAccessRequired = () => {
   if (router.currentRoute.value.name !== "access") void router.replace({ name: "access" });
 };
 
-createApp(App).use(i18n).use(router).mount("#app");
+createApp(App)
+  .use(i18n)
+  .use(router)
+  // 出现时把光标放进去（新建、重命名的输入框）
+  .directive("focus", { mounted: (el: HTMLElement) => el.focus() })
+  .mount("#app");

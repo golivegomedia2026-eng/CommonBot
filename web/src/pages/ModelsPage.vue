@@ -1,10 +1,10 @@
 <script setup lang="ts">
-import { onMounted, reactive, ref } from "vue";
+import { computed, onMounted, reactive, ref } from "vue";
 
-import { api, type Provider, type ProviderInput } from "../api";
+import { api, kb, type ModelRef, type Provider, type ProviderInput } from "../api";
 import Icon from "../components/Icon.vue";
 import { errorText } from "../i18n";
-import { checkProvider, loadProviders, state } from "../state";
+import { checkProvider, loadProviders, modelOptions, state } from "../state";
 
 const error = ref("");
 const formError = ref("");
@@ -15,6 +15,33 @@ const editing = ref<string | null>(null);
 const form = reactive({ name: "", kind: "local" as "local" | "cloud", base_url: "", api_key: "", clear_key: false, default_model: "", has_key: false });
 
 onMounted(() => loadProviders().catch((e) => (error.value = errorText(e))));
+
+// 知识库用的两个模型
+const options = computed(modelOptions);
+const kbPick = reactive({ embed: "", ocr: "" });
+const kbSaved = ref(false);
+const key = (m: ModelRef | null) => (m ? `${m.provider_id}\n${m.model}` : "");
+const unkey = (v: string): ModelRef | null => (v ? { provider_id: v.split("\n")[0], model: v.split("\n")[1] } : null);
+onMounted(async () => {
+  try {
+    const s = await kb.settings();
+    Object.assign(kbPick, { embed: key(s.embed), ocr: key(s.ocr) });
+  } catch (e) {
+    error.value = errorText(e);
+  }
+});
+async function saveKb() {
+  kbSaved.value = false;
+  try {
+    await kb.saveSettings({ embed: unkey(kbPick.embed), ocr: unkey(kbPick.ocr) });
+    kbSaved.value = true;
+    setTimeout(() => (kbSaved.value = false), 2500);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
+/** 已保存的选择不在当前可选列表里时也要能显示出来。 */
+const extra = (v: string) => (v && !options.value.some((o) => `${o.providerId}\n${o.model}` === v) ? v : "");
 
 function startAdd() {
   Object.assign(form, { name: "", kind: "local", base_url: "http://127.0.0.1:11434/v1", api_key: "", clear_key: false, default_model: "", has_key: false });
@@ -95,6 +122,19 @@ async function remove(id: string) {
       <span v-else-if="state.checks[p.id]?.state === 'checking'" class="tag">{{ $t("models.checking") }}</span>
       <span v-else class="tag">{{ $t("models.notChecked") }}</span>
     </div>
+  </div>
+
+  <div class="card form">
+    <div class="row"><h2 class="grow">{{ $t("kb.modelsTitle") }}</h2><span v-if="kbSaved" class="tag ok">✓ {{ $t("kb.saved") }}</span></div>
+    <label v-for="which in ['embed', 'ocr'] as const" :key="which" class="field">
+      <span>{{ $t(`kb.${which}`) }}</span>
+      <select v-model="kbPick[which]" @change="saveKb">
+        <option value="">{{ $t("kb.notUsed") }}</option>
+        <option v-if="extra(kbPick[which])" :value="kbPick[which]">{{ kbPick[which].split("\n")[1] }}</option>
+        <option v-for="o in options" :key="`${o.providerId}\n${o.model}`" :value="`${o.providerId}\n${o.model}`">{{ o.label }}</option>
+      </select>
+      <span>{{ $t(`kb.${which}Hint`) }}</span>
+    </label>
   </div>
 
   <template v-if="editing !== null">

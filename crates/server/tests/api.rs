@@ -136,7 +136,7 @@ async fn checks_backend_and_classifies_failures() {
     let id = add_provider(&app, &good, Some("sk-ok")).await;
     let r = req(Method::POST, &format!("/api/providers/{id}/check")).send(&app).await;
     assert_eq!(r.status, StatusCode::OK, "{}", r.text);
-    assert_eq!(r.json()["models"], json!(["mock-large", "mock-small"]));
+    assert_eq!(r.json()["models"], json!(["mock-embed", "mock-large", "mock-small", "mock-vision"]));
 
     // 密钥不对
     let id = add_provider(&app, &good, Some("sk-wrong")).await;

@@ -1,6 +1,6 @@
 import { createI18n } from "vue-i18n";
 
-import { ApiError } from "../api";
+import { ApiError, type Locator } from "../api";
 import en from "./en";
 import ja from "./ja";
 import zhCN from "./zh-CN";
@@ -59,6 +59,9 @@ document.documentElement.lang = i18n.global.locale.value;
 export function errorText(e: unknown): string {
   const t = i18n.global.t;
   if (e instanceof ApiError) {
+    // 「填写不合要求」里常见的几种，给出更具体的说明
+    const field = e.code === "invalid" ? /invalid input: (\w+)/.exec(e.detail)?.[1] : undefined;
+    if (field && i18n.global.te(`errors.invalid_${field}`)) return t(`errors.invalid_${field}`);
     const key = `errors.${e.code}`;
     return i18n.global.te(key) ? t(key, { detail: e.detail }) : t("errors.http", { detail: e.detail });
   }
@@ -69,4 +72,21 @@ export function errorText(e: unknown): string {
 export function errorCodeText(code: string, detail = ""): string {
   const key = `errors.${code}`;
   return i18n.global.te(key) ? i18n.global.t(key, { detail }) : i18n.global.t("errors.http", { detail: code });
+}
+
+/** 片段在原文档里的位置，写成当前语言的一句话。 */
+export function locText(l: Locator): string {
+  const t = i18n.global.t;
+  switch (l.kind) {
+    case "page":
+      return t("kb.locPage", { n: l.value });
+    case "slide":
+      return t("kb.locSlide", { n: l.value });
+    case "sheet":
+      return t("kb.locSheet", { name: l.value });
+    case "heading":
+      return t("kb.locHeading", { name: l.value });
+    default:
+      return "";
+  }
 }

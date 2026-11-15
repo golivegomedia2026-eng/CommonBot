@@ -67,3 +67,18 @@ describe("isToday", () => {
     expect(isToday(new Date(2026, 10, 14, 23, 59).getTime(), now)).toBe(false);
   });
 });
+
+import { linkCitations } from "./util";
+
+describe("linkCitations", () => {
+  it("links only numbers that have a source, and leaves code and attributes alone", () => {
+    const html = '<p>保修 24 个月 [1]，见 [3] 和 [2]。</p><pre><code>a[1]</code></pre><a href="x[1]">链接 [2]</a>';
+    const out = linkCitations(html, 2);
+    expect(out).toContain('个月 <button type="button" class="cite" data-cite="1">1</button>');
+    expect(out).toContain("见 [3] 和");
+    expect(out).toContain("<code>a[1]</code>");
+    expect(out).toContain('href="x[1]"');
+    expect(out.match(/data-cite/g)?.length).toBe(3);
+    expect(linkCitations(html, 0)).toBe(html);
+  });
+});

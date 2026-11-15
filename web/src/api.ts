@@ -27,6 +27,7 @@ export interface Agent {
   examples: string[];
   provider_id: string | null;
   model: string | null;
+  folders: string[];
   updated_at: number;
   system_prompt?: string;
 }
@@ -34,11 +35,71 @@ export interface AgentSummary extends Agent {
   conversations: number;
   last_used_at: number | null;
 }
-export type AgentInput = Pick<Agent, "name" | "description" | "duty" | "out_of_scope" | "instructions" | "opening" | "examples" | "provider_id" | "model">;
+export type AgentInput = Pick<Agent, "name" | "description" | "duty" | "out_of_scope" | "instructions" | "opening" | "examples" | "provider_id" | "model" | "folders">;
+
+export type Locator = { kind: "none" } | { kind: "page" | "slide"; value: number } | { kind: "sheet" | "heading"; value: string };
+export interface Source {
+  n: number;
+  kind: "kb";
+  document_id: string;
+  document: string;
+  folder: string;
+  locator: Locator;
+  text: string;
+}
+export interface Folder {
+  id: string;
+  parent_id: string | null;
+  name: string;
+  documents: number;
+}
+export interface KbStats {
+  documents: number;
+  chunks: number;
+  queued: number;
+  failed: number;
+  ready: number;
+  keyword_only: number;
+}
+export interface KbDocument {
+  id: string;
+  folder_id: string;
+  name: string;
+  ext: string;
+  size: number;
+  status: "queued" | "parsing" | "ocr" | "embedding" | "ready" | "failed" | "paused";
+  done: number;
+  total: number;
+  error_code: string | null;
+  error_detail: string | null;
+  pages: number | null;
+  chunks: number;
+  ocr_pages: number;
+  ocr_skipped: number;
+  embed_model: string | null;
+}
+export interface Hit {
+  chunk_id: number;
+  document_id: string;
+  document: string;
+  folder: string;
+  locator: Locator;
+  text: string;
+}
+export interface ModelRef {
+  provider_id: string;
+  model: string;
+}
+export interface KbSettings {
+  embed: ModelRef | null;
+  ocr: ModelRef | null;
+  pdf_engine: boolean;
+}
 
 export interface Conversation {
   id: string;
   agent_id: string;
+  scope: string[] | null;
   title: string;
   provider_id: string | null;
   model: string | null;
@@ -53,6 +114,7 @@ export interface Message {
   reasoning: string;
   status: "ok" | "stopped" | "error";
   error_code: string | null;
+  sources: Source[];
   created_at: number;
 }
 export interface Health {
@@ -133,8 +195,45 @@ export const api = {
   deleteConversation: (id: string) => call<void>("DELETE", `/conversations/${id}`),
 };
 
+export const kb = {
+  folders: () => call<{ folders: Folder[]; stats: KbStats }>("GET", "/kb/folders"),
+  createFolder: (name: string, parent_id: string | null) => call<{ id: string }>("POST", "/kb/folders", { name, parent_id }),
+  renameFolder: (id: string, name: string) => call<void>("PATCH", `/kb/folders/${id}`, { name }),
+  deleteFolder: (id: string) => call<void>("DELETE", `/kb/folders/${id}`),
+  documents: (folderId: string, recursive: boolean) =>
+    call<{ documents: KbDocument[]; stats: KbStats }>("GET", `/kb/folders/${folderId}/documents?recursive=${recursive}`),
+  deleteDocument: (id: string) => call<void>("DELETE", `/kb/documents/${id}`),
+  documentAction: (id: string, action: "retry" | "pause" | "resume") => call<KbDocument>("POST", `/kb/documents/${id}/${action}`),
+  chunks: (id: string, offset: number) =>
+    call<{ chunks: { seq: number; locator: Locator; text: string }[] }>("GET", `/kb/documents/${id}/chunks?offset=${offset}&limit=50`),
+  search: (query: string, folder_ids: string[]) =>
+    call<{ hits: Hit[]; semantic: boolean; note: string | null }>("POST", "/kb/search", { query, folder_ids }),
+  settings: () => call<KbSettings>("GET", "/kb/settings"),
+  saveSettings: (s: { embed: ModelRef | null; ocr: ModelRef | null }) =>
+    call<KbSettings>("PUT", "/kb/settings", {
+      embed_provider_id: s.embed?.provider_id ?? "",
+      embed_model: s.embed?.model ?? "",
+      ocr_provider_id: s.ocr?.provider_id ?? "",
+      ocr_model: s.ocr?.model ?? "",
+    }),
+  /** 上传若干文件。不支持或过大的文件在 rejected 里逐个说明。 */
+  async upload(folderId: string, files: File[]): Promise<{ added: KbDocument[]; rejected: { name: string; code: string }[] }> {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    let resp: Response;
+    try {
+      resp = await fetch(`/api/kb/folders/${folderId}/documents`, { method: "POST", body: form });
+    } catch (e) {
+      throw new ApiError(0, "upload_failed", String(e));
+    }
+    if (!resp.ok) throw await toError(resp);
+    return resp.json();
+  },
+};
+
 export type StreamEvent =
   | { type: "user"; message: Message; conversation: Conversation }
+  | { type: "sources"; sources: Source[]; semantic: boolean; note: string | null }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
   | { type: "done"; message: Message }
@@ -165,7 +264,7 @@ export function parseEvents(buffer: string): { events: StreamEvent[]; rest: stri
 /** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
 export async function sendMessage(
   conversationId: string,
-  body: { content: string; provider_id?: string; model?: string },
+  body: { content: string; provider_id?: string; model?: string; scope?: string[] },
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

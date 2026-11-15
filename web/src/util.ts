@@ -29,3 +29,17 @@ export function isToday(ms: number, now = Date.now()): boolean {
   const b = new Date(now);
   return a.getFullYear() === b.getFullYear() && a.getMonth() === b.getMonth() && a.getDate() === b.getDate();
 }
+
+/** 把回答里的 [1] [2] 换成可点的出处编号；只处理确实有对应出处的编号。 */
+export function linkCitations(html: string, count: number): string {
+  if (!count) return html;
+  // 只替换标签之外的文字，不碰属性和代码块
+  return html
+    .split(/(<pre[\s\S]*?<\/pre>|<code[\s\S]*?<\/code>|<[^>]+>)/)
+    .map((part) =>
+      part.startsWith("<")
+        ? part
+        : part.replace(/\[(\d{1,2})\]/g, (m, n) => (Number(n) >= 1 && Number(n) <= count ? `<button type="button" class="cite" data-cite="${n}">${n}</button>` : m)),
+    )
+    .join("");
+}

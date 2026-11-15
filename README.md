@@ -2,7 +2,7 @@
 
 通用智能体平台：新建智能体并定义职责、为智能体建知识库（可结合联网回答）、通过对话生成新的智能体。主机为 NVIDIA DGX Spark，Rust 实现。
 
-当前阶段：**P1 智能体已完成**——可以新建智能体、定义职责、各自对话；知识库、联网、建造师在后续阶段。
+当前阶段：**P2 知识库已完成**——智能体可以依据知识库回答并标注出处；联网、建造师、客户端和安装包在后续阶段。
 
 - 方案：[docs/v1/PLAN.md](docs/v1/PLAN.md)
 - 决策：[docs/v1/DECISIONS.md](docs/v1/DECISIONS.md)
@@ -13,6 +13,9 @@
 
 - 新建智能体：写清负责什么、不负责什么、开场白和示例问题，可固定使用某个模型；系统提示词由这些内容生成并可预览
 - 每个智能体有自己的对话记录
+- 知识库：多级文件夹；上传 PDF、Word、PowerPoint、Excel、文本、Markdown、网页、图片；扫描件由看图模型识别；入库在后台排队，可暂停、重试
+- 依据知识库回答：关键词和语义两路检索，回答里标注出处编号，点开可看原文片段
+- 知识范围可以选到文件夹：智能体有默认范围，每次对话可临时改，也可以在文件夹页面直接提问
 - 连接本机的推理服务（默认 Ollama，也可以是 vLLM、llama.cpp 等任何 OpenAI 兼容接口），检测连通并列出模型
 - 流式对话，可中途停止，已生成的部分会保留；对话保存在本机，重启后还在
 - 添加云端模型作为后备；密钥只存在本机，不会回传给界面
@@ -22,6 +25,12 @@
 ## 从源码运行（Spark 与 Mac 相同）
 
 需要 Rust、Node 22 和 pnpm，以及一个已装好模型的推理服务（例如 Ollama）。
+
+先取 PDF 解析库（只需一次）：
+
+```bash
+scripts/fetch-vendor.sh
+```
 
 ```bash
 pnpm --dir web install --frozen-lockfile
@@ -67,13 +76,17 @@ cargo test --workspace
 
 ## 实际界面截图
 
-| 智能体列表 | 智能体对话 |
+| 智能体对话：依据知识库回答，带出处 | 知识库：文件夹、文档、入库状态 |
 | --- | --- |
-| ![列表](docs/screenshots/p1-agents.png) | ![对话](docs/screenshots/p1-agent-chat.png) |
+| ![出处](docs/screenshots/p2-chat-sources.png) | ![知识库](docs/screenshots/p2-kb.png) |
 
-| 配置抽屉 | 模型设置 | 手机 |
+| 提问时选知识范围 | 检索测试 |
+| --- | --- |
+| ![范围](docs/screenshots/p2-chat-scope.png) | ![检索](docs/screenshots/p2-kb-search.png) |
+
+| 智能体列表 | 配置抽屉 | 手机 |
 | --- | --- | --- |
-| ![配置](docs/screenshots/p1-agent-config.png) | ![模型](docs/screenshots/p0-models.png) | ![手机](docs/screenshots/p1-agent-chat-phone.png) |
+| ![列表](docs/screenshots/p1-agents.png) | ![配置](docs/screenshots/p2-agent-folders.png) | ![手机](docs/screenshots/p2-chat-phone.png) |
 
 ## 效果图截图
 

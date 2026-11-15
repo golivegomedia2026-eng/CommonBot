@@ -141,7 +141,7 @@ input[type=checkbox] { accent-color: var(--accent); }
   main { padding: 16px 12px 12px; gap: 12px; }
   h1 { font-size: 22px; }
   .msg { max-width: 90%; }
-  .tabbar { display: grid; grid-template-columns: repeat(3, 1fr); flex: none; background: var(--nav-bg); border-top: 1px solid var(--nav-line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); flex: none; background: var(--nav-bg); border-top: 1px solid var(--nav-line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
   .tabbar .link { text-align: center; padding: 8px 2px; font-size: 13px; }
   .tabbar .link.on::before { left: 30%; right: 30%; top: auto; bottom: 2px; width: auto; height: 3px; }
 }
@@ -164,3 +164,63 @@ textarea { resize: vertical; min-height: 64px; line-height: 1.6; }
 .drawer pre { margin: 8px 0 0; padding: 10px 12px; background: var(--inset); border-radius: 8px; white-space: pre-wrap; overflow-wrap: anywhere; font: 12.5px/1.6 var(--font-sans); }
 .crumb { color: var(--eyebrow); text-decoration: none; }
 .crumb:hover { text-decoration: underline; }
+
+/* 知识库 */
+.kbpage { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
+.tree { padding: 10px; display: flex; flex-direction: column; gap: 1px; }
+.node { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 7px 8px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--text-2); text-decoration: none; }
+.node:hover { background: var(--hover-bg); }
+.node.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+.node span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.node i { font-style: normal; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; font-weight: 400; }
+.node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.kbmain { display: flex; flex-direction: column; gap: 16px; min-width: 0; }
+.ask { display: flex; flex-direction: column; gap: 10px; border-color: var(--accent); }
+.ask .composer { margin: 0; }
+.kpis { display: grid; grid-template-columns: repeat(auto-fit, minmax(130px, 1fr)); gap: 14px; }
+.num { font: 700 26px/1.3 var(--font-serif); color: var(--kpi); font-variant-numeric: tabular-nums; }
+.tbl { overflow-x: auto; border: 1px solid var(--line); border-radius: 10px; background: var(--surface); }
+table { width: 100%; border-collapse: collapse; }
+th, td { text-align: left; padding: 9px 12px; border-top: 1px solid var(--line); white-space: nowrap; }
+td.name { white-space: normal; min-width: 14em; overflow-wrap: anywhere; }
+td.st { white-space: normal; min-width: 12em; }
+th { background: var(--inset); color: var(--text-3); font-weight: 500; font-size: 12.5px; border-top: 0; }
+td.n, th.n { font-variant-numeric: tabular-nums; text-align: right; }
+tbody tr:hover { background: var(--hover-bg); }
+.bar { width: 80px; height: 6px; border-radius: 3px; background: var(--inset); overflow: hidden; display: inline-block; vertical-align: middle; margin-right: 6px; }
+.bar i { display: block; height: 100%; background: var(--accent); }
+.drop { border: 1.5px dashed var(--line-strong); border-radius: 12px; padding: 22px; text-align: center; color: var(--text-3); }
+.drop.over { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.hit { padding: 10px 0; border-top: 1px solid var(--line-soft); overflow-wrap: anywhere; }
+.hit:first-child { border-top: 0; }
+.hit p { white-space: pre-wrap; margin-top: 4px; color: var(--text-2); }
+.inline-form { display: flex; gap: 8px; align-items: center; }
+.inline-form input { flex: 1; min-width: 0; }
+
+/* 出处 */
+.cite { display: inline-grid; place-items: center; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 4px; font: 11px var(--font-sans); background: var(--surface); border: 1px solid var(--line-strong); color: var(--link); vertical-align: 1px; cursor: pointer; }
+.cite:hover, .cite.on { background: var(--accent-soft); border-color: var(--accent); color: var(--accent); }
+.srcs { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); display: flex; flex-direction: column; gap: 4px; font-size: 12.5px; color: var(--text-2); }
+.srcs b { font-weight: 500; color: var(--text-3); font-size: 12px; }
+.src { display: flex; gap: 6px; align-items: baseline; border: 0; background: none; padding: 2px 0; text-align: left; cursor: pointer; color: inherit; overflow-wrap: anywhere; }
+.src:hover span:last-child { text-decoration: underline; }
+.srcs blockquote { margin: 2px 0 6px 23px; padding: 6px 10px; border-left: 2px solid var(--line-strong); background: var(--surface); border-radius: 0 6px 6px 0; white-space: pre-wrap; overflow-wrap: anywhere; }
+
+/* 输入区的范围选择 */
+.pw { position: relative; }
+.pop { position: absolute; left: 0; bottom: calc(100% + 6px); width: 280px; max-width: 80vw; max-height: 320px; overflow-y: auto; z-index: 6; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent); }
+.pop > b { display: block; padding: 2px 6px 6px; font-weight: 500; font-size: 12px; color: var(--text-3); }
+.pop label, .picker label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+.pop label:hover, .picker label:hover { background: var(--hover-bg); }
+.picker label span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.picker { max-height: 220px; overflow-y: auto; border: 1px solid var(--line); border-radius: 8px; padding: 4px; }
+.pop .picker { border: 0; padding: 0; max-height: none; margin-left: 14px; }
+.chip[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+.chip > span { overflow: hidden; text-overflow: ellipsis; max-width: 220px; }
+
+@media (max-width: 900px) {
+  .kbpage { grid-template-columns: 1fr; }
+  .tree { flex-direction: row; overflow-x: auto; }
+  .tree .node { width: auto; flex: none; padding: 6px 10px !important; }
+  .tree .node i, .tree .newf { display: none; }
+}

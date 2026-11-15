@@ -4,7 +4,8 @@ import { computed, onMounted, reactive, ref, watch } from "vue";
 
 import { type Agent, type AgentInput, api } from "../api";
 import { errorText } from "../i18n";
-import { loadProviders, modelOptions, state } from "../state";
+import { loadFolders, loadProviders, modelOptions, state } from "../state";
+import FolderPicker from "./FolderPicker.vue";
 
 const props = defineProps<{ agent: Agent | null }>();
 const emit = defineEmits<{ close: []; saved: [Agent]; deleted: [] }>();
@@ -19,6 +20,7 @@ const form = reactive({
   opening: a?.opening ?? "",
   examples: (a?.examples ?? []).join("\n"),
   model: a?.model ? `${a.provider_id}\n${a.model}` : "",
+  folders: [...(a?.folders ?? [])],
 });
 const error = ref("");
 const saving = ref(false);
@@ -41,11 +43,14 @@ function input(): AgentInput {
     examples: form.examples.split("\n").map((l) => l.trim()).filter(Boolean),
     provider_id,
     model,
+    // 已被删除的文件夹不再保留
+    folders: state.foldersLoaded ? form.folders.filter((id) => state.folders.some((f) => f.id === id)) : form.folders,
   };
 }
 
 onMounted(() => {
   if (!state.providersLoaded) void loadProviders().catch(() => {});
+  void loadFolders().catch(() => {});
 });
 
 // 编辑时稍停一下再刷新提示词预览
@@ -112,6 +117,11 @@ async function remove() {
     <label class="field"><span>{{ $t("agents.instructions") }}</span><textarea v-model="form.instructions" rows="2" maxlength="4000" /><span>{{ $t("agents.instructionsHint") }}</span></label>
     <label class="field"><span>{{ $t("agents.opening") }}</span><textarea v-model="form.opening" rows="2" maxlength="1000" /><span>{{ $t("agents.openingHint") }}</span></label>
     <label class="field"><span>{{ $t("agents.examples") }}</span><textarea v-model="form.examples" rows="3" /><span>{{ $t("agents.examplesHint") }}</span></label>
+    <div class="field">
+      <span>{{ $t("kb.agentFolders") }}</span>
+      <FolderPicker v-model="form.folders" />
+      <span>{{ $t("kb.agentFoldersHint") }}</span>
+    </div>
     <label class="field">
       <span>{{ $t("agents.model") }}</span>
       <select v-model="form.model">

@@ -2,14 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { type Agent, api, ApiError, type Conversation, type Message, sendMessage } from "../api";
+import { type Agent, api, ApiError, type Conversation, type Message, sendMessage, type Source } from "../api";
 import AgentConfig from "../components/AgentConfig.vue";
 import Composer from "../components/Composer.vue";
 import Icon from "../components/Icon.vue";
-import { errorCodeText, errorText } from "../i18n";
+import { errorCodeText, errorText, locText } from "../i18n";
 import { renderMarkdown } from "../md";
-import { loadProviders, state } from "../state";
-import { copyText, isToday } from "../util";
+import { loadFolders, loadProviders, state } from "../state";
+import { copyText, isToday, linkCitations } from "../util";
 
 const route = useRoute();
 const router = useRouter();
@@ -20,7 +20,11 @@ const conversations = ref<Conversation[]>([]);
 const messages = ref<Message[]>([]);
 const draft = ref("");
 const busy = ref(false);
-const live = reactive({ content: "", reasoning: "" });
+const live = reactive({ content: "", reasoning: "", sources: [] as Source[], keywordOnly: false });
+/** 这次对话查哪些文件夹；null 表示按智能体的默认。 */
+const scope = ref<string[] | null>(null);
+/** 展开看原文的出处：消息编号 + 出处编号 */
+const openSource = ref("");
 const error = ref("");
 const histOpen = ref(false);
 const confirming = ref("");
@@ -56,10 +60,13 @@ async function open(id: string) {
   error.value = "";
   if (!id) {
     messages.value = [];
+    scope.value = null;
     return;
   }
   try {
-    messages.value = (await api.conversation(id)).messages;
+    const got = await api.conversation(id);
+    messages.value = got.messages;
+    scope.value = got.conversation.scope;
     toBottom(true);
   } catch (e) {
     if (e instanceof ApiError && e.code === "not_found") return void router.replace(base.value);
@@ -80,6 +87,14 @@ async function loadAgent() {
   try {
     const [a] = await Promise.all([api.agent(agentId.value), loadList(), open(currentId.value), state.providersLoaded ? null : loadProviders()]);
     agent.value = a;
+    void loadFolders().catch(() => {});
+    // 从知识库的文件夹页过来：带着范围，问题直接发出去
+    const { scope: s, q } = route.query;
+    if (typeof s === "string" && s) scope.value = [s];
+    if (typeof q === "string" && q) {
+      await router.replace({ path: route.path });
+      void send(q);
+    }
   } catch (e) {
     if (e instanceof ApiError && e.code === "not_found") return void router.replace("/agents");
     error.value = errorText(e);
@@ -99,7 +114,7 @@ async function send(text?: string) {
   error.value = "";
   busy.value = true;
   let id = currentId.value;
-  const pending: Message = { id: "pending", conversation_id: id, role: "user", content, reasoning: "", status: "ok", error_code: null, created_at: Date.now() };
+  const pending: Message = { id: "pending", conversation_id: id, role: "user", content, reasoning: "", status: "ok", error_code: null, sources: [], created_at: Date.now() };
   try {
     if (!id) {
       id = (await api.createConversation(agentId.value)).id;
@@ -112,7 +127,7 @@ async function send(text?: string) {
     abort = new AbortController();
     await sendMessage(
       id,
-      fixed ? { content } : { content, provider_id: providerId, model },
+      { content, ...(fixed ? {} : { provider_id: providerId, model }), ...(scope.value ? { scope: scope.value } : {}) },
       (e) => {
         if (e.type === "user") {
           const i = messages.value.findIndex((m) => m.id === "pending");
@@ -120,6 +135,9 @@ async function send(text?: string) {
           const at = conversations.value.findIndex((c) => c.id === e.conversation.id);
           if (at >= 0) conversations.value.splice(at, 1);
           conversations.value.unshift(e.conversation);
+        } else if (e.type === "sources") {
+          live.sources = e.sources;
+          live.keywordOnly = !e.semantic && e.sources.length > 0;
         } else if (e.type === "delta") {
           live.content += e.text;
         } else if (e.type === "reasoning") {
@@ -128,6 +146,7 @@ async function send(text?: string) {
           if (e.message) messages.value.push(e.message);
           else if (e.type === "error") error.value = errorCodeText(e.code, e.detail);
           live.content = live.reasoning = "";
+          live.sources = [];
         }
         toBottom();
       },
@@ -148,6 +167,7 @@ async function send(text?: string) {
     }
   } finally {
     live.content = live.reasoning = "";
+    live.sources = [];
     busy.value = false;
     abort = null;
     void loadList().catch(() => {});
@@ -173,6 +193,16 @@ async function remove(id: string) {
 function saved(a: Agent) {
   agent.value = a;
   configuring.value = false;
+}
+
+/** 点回答里的出处编号：展开对应的原文片段。 */
+function citeClick(e: MouseEvent, messageId: string) {
+  const n = (e.target as HTMLElement).closest<HTMLElement>("[data-cite]")?.dataset.cite;
+  if (n) toggleSource(messageId, Number(n));
+}
+function toggleSource(messageId: string, n: number) {
+  const key = `${messageId}:${n}`;
+  openSource.value = openSource.value === key ? "" : key;
 }
 
 async function copy(m: Message) {
@@ -218,7 +248,16 @@ async function copy(m: Message) {
           <div v-if="m.role === 'user'" class="msg me">{{ m.content }}</div>
           <div v-else class="msg bot">
             <details v-if="m.reasoning"><summary>{{ $t("chat.thinking") }}</summary><div>{{ m.reasoning }}</div></details>
-            <div v-if="m.content" class="md" v-html="renderMarkdown(m.content)" />
+            <div v-if="m.content" class="md" @click="citeClick($event, m.id)" v-html="linkCitations(renderMarkdown(m.content), m.sources.length)" />
+            <div v-if="m.sources.length" class="srcs">
+              <b>{{ $t("kb.sources") }}</b>
+              <template v-for="s in m.sources" :key="s.n">
+                <button class="src" :aria-expanded="openSource === `${m.id}:${s.n}`" @click="toggleSource(m.id, s.n)">
+                  <span class="cite" :class="{ on: openSource === `${m.id}:${s.n}` }">{{ s.n }}</span><span>{{ s.document }} · {{ [locText(s.locator), s.folder].filter(Boolean).join(" · ") }}</span>
+                </button>
+                <blockquote v-if="openSource === `${m.id}:${s.n}`">{{ s.text }}</blockquote>
+              </template>
+            </div>
             <div v-if="m.status === 'error'" class="alert err">{{ errorCodeText(m.error_code ?? "http") }}</div>
             <div class="foot">
               <span v-if="m.status === 'stopped'" class="tag warn">{{ $t("chat.stopped") }}</span>
@@ -228,7 +267,7 @@ async function copy(m: Message) {
         </template>
         <div v-if="busy" class="msg bot" aria-live="polite">
           <details v-if="live.reasoning" open><summary>{{ $t("chat.thinking") }}</summary><div>{{ live.reasoning }}</div></details>
-          <div v-if="live.content" class="md" v-html="renderMarkdown(live.content)" />
+          <div v-if="live.content" class="md" v-html="linkCitations(renderMarkdown(live.content), live.sources.length)" />
           <span class="caret" :title="$t('chat.generating')" />
         </div>
       </div>
@@ -241,7 +280,7 @@ async function copy(m: Message) {
       <div v-if="agent?.examples.length && !busy && !messages.length" class="quick">
         <button v-for="q in agent.examples" :key="q" class="chip" @click="send(q)">{{ q }}</button>
       </div>
-      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" :locked-model="agent?.model" @send="send()" @stop="abort?.abort()" />
+      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" :locked-model="agent?.model" v-model:scope="scope" :default-scope="agent?.folders ?? []" @send="send()" @stop="abort?.abort()" />
       <div class="tip">{{ $t("chat.tip") }}</div>
     </div>
   </div>
