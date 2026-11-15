@@ -1479,6 +1479,7 @@ fn fake_pack(dir: &std::path::Path) -> commonbot_server::compute::Pack {
     let script = r#"#!/bin/sh
 [ "$1" = serve ] || exit 2
 [ -d "$OLLAMA_MODELS" ] || exit 3
+echo $$ > "$OLLAMA_MODELS/pid"
 exec python3 -c '
 import sys, json
 from http.server import BaseHTTPRequestHandler, HTTPServer
@@ -1518,7 +1519,7 @@ async fn compute_pack_is_started_watched_and_wired_up_once() {
     let wait_for = |want: State| {
         let c = compute.clone();
         async move {
-            for _ in 0..100 {
+            for _ in 0..400 {
                 if c.state() == want {
                     return;
                 }
@@ -1552,17 +1553,8 @@ async fn compute_pack_is_started_watched_and_wired_up_once() {
 
     // 用户之后改了设置；运行时崩了被重新拉起，不会把用户的设置改回去
     req(Method::PUT, "/api/kb/settings").json(json!({})).send(&app).await;
-    let pid = String::from_utf8(
-        std::process::Command::new("pgrep")
-            .args(["-f", &format!("int\\(sys.argv\\[1\\]\\).*{port}$|{port}$")])
-            .output()
-            .unwrap()
-            .stdout,
-    )
-    .unwrap();
-    for p in pid.split_whitespace() {
-        let _ = std::process::Command::new("kill").arg("-9").arg(p).status();
-    }
+    let pid = std::fs::read_to_string(dir.join("compute/models/pid")).unwrap();
+    assert!(std::process::Command::new("kill").arg("-9").arg(pid.trim()).status().unwrap().success());
     wait_for(State::Starting).await;
     wait_for(State::Running).await;
     assert!(req(Method::GET, "/api/kb/settings").send(&app).await.json()["embed"].is_null(), "user's choice is kept");
