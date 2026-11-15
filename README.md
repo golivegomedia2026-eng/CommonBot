@@ -2,7 +2,7 @@
 
 通用智能体平台：新建智能体并定义职责、为智能体建知识库（可结合联网回答）、通过对话生成新的智能体。主机为 NVIDIA DGX Spark，Rust 实现。
 
-当前阶段：三项基本要求（新建智能体并定义任务、知识库加联网回答、通过对话生成可独立使用的智能体）都已实现，并能打成解压即用的离线包。桌面外壳、手机客户端和语音还没有做。
+当前阶段：三项基本要求（新建智能体并定义任务、知识库加联网回答、通过对话生成可独立使用的智能体）都已实现，并能打成解压即用的离线包和带窗口的桌面版安装包。手机客户端和语音还没有做（手机用浏览器访问）。
 
 - 使用说明：[简体中文](web/src/guide/zh-CN.md) · [繁體中文](web/src/guide/zh-TW.md) · [English](web/src/guide/en.md) · [日本語](web/src/guide/ja.md)（应用里的「使用说明」页是同一份）
 - 发行与升级：[docs/RELEASE.md](docs/RELEASE.md)
@@ -96,6 +96,10 @@ cargo test --workspace
 | 建造师：访谈、草稿、试答 | 发布后的链接与密钥 |
 | --- | --- |
 | ![建造师](docs/screenshots/p4-builder.png) | ![发布](docs/screenshots/p4-builder-published.png) |
+
+| 桌面版窗口 |
+| --- |
+| ![桌面版](docs/screenshots/p5-desktop.png) |
 
 | 必须升级时的提示 | 有新版本时的提示 |
 | --- | --- |

@@ -7,6 +7,8 @@
 | `commonbot-<版本>-linux-arm64.tar.gz` | DGX Spark 等 ARM64 Linux |
 | `commonbot-<版本>-mac-arm64.tar.gz` | Apple Silicon 的 Mac |
 | `commonbot-<版本>-linux-x64.tar.gz` | 普通 x64 Linux |
+| `CommonBot_<版本>_arm64.deb`、`CommonBot_<版本>_amd64.deb` | 桌面版（Linux）：带窗口和托盘，进程内运行服务 |
+| `CommonBot_<版本>_aarch64.dmg` | 桌面版（Mac） |
 | `policy.json`、`policy.json.sig` | 升级检查读的版本策略和它的签名（配置了签名密钥才有） |
 | `SHA256SUMS` | 以上文件的校验和 |
 
@@ -61,7 +63,24 @@
 - 打开局域网访问，另一台设备凭访问码使用；发布一个智能体，用链接和 API 密钥各访问一次。
 - 从上一个版本升级：数据保留，对话和知识库都在。
 
+## 桌面版
+
+`apps/desktop` 是一个 Tauri 2 外壳：在进程里直接运行服务，开窗口显示界面，托盘常驻。本机 8600 端口上已经有 CommonBot 在运行时（比如装成了系统服务），它只开窗口连过去，不再启动第二份。
+
+本地构建（Linux 需要先装窗口开发库）：
+
+```bash
+sudo apt-get install -y libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev libxdo-dev libssl-dev
+```
+
+```bash
+scripts/desktop.sh
+```
+
+发行工作流里桌面版单独一个作业，失败不挡住离线包的发行。桌面版的升级提示与离线包相同（界面里提示，去下载页取新包安装），没有接入自动安装。
+
 ## 目前没有的
 
-- 程序没有做系统签名和公证：Mac 上首次运行需要先解除隔离（使用说明里有命令）。
-- 没有桌面外壳和手机客户端的安装包；现在的形态是「主机上跑服务，各设备用浏览器」。
+- 程序没有做系统签名和公证：Mac 上首次运行压缩包版需要先解除隔离（使用说明里有命令）；DMG 同样未签名。
+- 没有手机客户端的安装包：手机用浏览器访问主机（界面已适配手机宽度）。
+- 没有语音。

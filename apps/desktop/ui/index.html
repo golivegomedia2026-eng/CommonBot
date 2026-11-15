@@ -1,0 +1,40 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CommonBot</title>
+<style>
+  /* 启动中 / 启动失败时显示的页面。颜色与主界面的「宣纸」「黛夜」两套色境一致。 */
+  :root { color-scheme: light dark; --bg: #F8F4ED; --surface: #FFFEF8; --text: #1D1B1C; --muted: #424B50; --accent: #2E5D4A; --on-accent: #FFFEF8; --danger: #9E2F2F; --danger-bg: #F2CAC9; --line: #DAD4CB; }
+  @media (prefers-color-scheme: dark) { :root { --bg: #0F1A20; --surface: #1C2938; --text: #E8F0F4; --muted: #B4C4CC; --accent: #8ABCD1; --on-accent: #0F1A20; --danger: #F2CAC9; --danger-bg: #5A2A30; --line: #33485C; } }
+  html, body { height: 100%; margin: 0; }
+  body { display: grid; place-items: center; background: var(--bg); color: var(--text); font: 15px/1.7 "PingFang SC", "Microsoft YaHei", "Noto Sans CJK SC", system-ui, sans-serif; }
+  .box { width: min(460px, 86vw); text-align: center; }
+  .logo { width: 64px; height: 64px; margin: 0 auto 18px; border-radius: 16px; display: grid; place-items: center; background: var(--accent); color: var(--on-accent); font: 700 36px "Songti SC", "Noto Serif CJK SC", serif; }
+  p { margin: 6px 0; color: var(--muted); }
+  pre { text-align: left; white-space: pre-wrap; overflow-wrap: anywhere; padding: 12px 14px; border-radius: 10px; background: var(--danger-bg); color: var(--danger); border: 1px solid var(--line); font: 13px/1.6 ui-monospace, Menlo, Consolas, monospace; }
+</style>
+</head>
+<body>
+<div class="box">
+  <div class="logo">智</div>
+  <h2 id="title">CommonBot</h2>
+  <p id="text"></p>
+  <pre id="error" hidden></pre>
+</div>
+<script>
+  const T = {
+    "zh-TW": ["正在啟動…", "啟動失敗。請把下面的資訊提供給支援人員："],
+    zh: ["正在启动…", "启动失败。请把下面的信息提供给支持人员："],
+    ja: ["起動しています…", "起動に失敗しました。次の内容をサポートに伝えてください："],
+    en: ["Starting…", "CommonBot could not start. Please pass this on to support:"],
+  };
+  const lang = navigator.language || "zh";
+  const t = T[/^zh.*(TW|HK|Hant)/i.test(lang) ? "zh-TW" : lang.slice(0, 2)] || T.en;
+  const error = new URLSearchParams(location.search).get("error");
+  document.getElementById("text").textContent = error ? t[1] : t[0];
+  if (error) { const e = document.getElementById("error"); e.textContent = error; e.hidden = false; }
+</script>
+</body>
+</html>

@@ -1,0 +1,27 @@
+[package]
+name = "commonbot-desktop"
+version = "0.1.0"
+edition = "2021"
+authors = ["M&J Group <473276@qq.com>"]
+license = "LicenseRef-Proprietary"
+publish = false
+description = "CommonBot 桌面外壳：在本机运行服务并打开窗口"
+
+# 不属于根工作区：它依赖系统的窗口库，单独构建，免得没有这些库的环境连测试都跑不了
+[workspace]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+commonbot-server = { path = "../../crates/server" }
+open = "5"
+reqwest = { version = "0.12", default-features = false, features = ["json"] }
+serde_json = "1"
+tauri = { version = "2", features = ["tray-icon"] }
+tauri-plugin-single-instance = "2"
+tokio = { version = "1", features = ["time"] }
+
+[profile.release]
+lto = "thin"
+strip = true

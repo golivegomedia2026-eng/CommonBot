@@ -1,0 +1,24 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "CommonBot",
+  "version": "0.1.0",
+  "identifier": "com.mjgroup.commonbot",
+  "build": {
+    "frontendDist": "./ui"
+  },
+  "app": {
+    "windows": [],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": [],
+    "publisher": "M&J Group",
+    "copyright": "© M&J Group",
+    "category": "Productivity",
+    "shortDescription": "在自己的机器上建立和使用智能体",
+    "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
+  }
+}

@@ -7,6 +7,7 @@ mod chat;
 mod published;
 mod routes;
 mod routes_kb;
+pub mod run;
 pub mod updater;
 
 use std::net::SocketAddr;

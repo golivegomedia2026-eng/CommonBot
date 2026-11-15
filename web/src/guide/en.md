@@ -24,6 +24,10 @@ If the machine has no display, turn on LAN access from a terminal, note the acce
 2. Before first use, run this once in Terminal on the unpacked folder (the program is unsigned, so macOS refuses to open it otherwise): `xattr -dr com.apple.quarantine path-to-folder`
 3. Double-click “Start CommonBot.command” in the folder. Your browser opens automatically.
 
+### Desktop app (optional)
+
+Besides the archive above there is a desktop app with its own window: a `.deb` for Linux (`sudo apt install ./CommonBot_version_arm64.deb`) and a `.dmg` for Mac. It runs the service in the background and shows the interface. Closing the window leaves the service running; quit from the tray icon's menu. It keeps data in the same place as the archive version, so you can switch between the two, but don't run both at once.
+
 ## 2. Prepare models
 
 CommonBot does not include models. It connects to an inference service on your machine. Ollama is the easiest: install it, pull a model, and CommonBot finds it by default (`http://127.0.0.1:11434/v1`). Any service with an OpenAI-compatible API (vLLM, llama.cpp and others) also works; add it on the Models page.
