@@ -9,8 +9,7 @@ use rusqlite::Connection;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::kb::chunk::{chunk, tokens};
-use crate::kb::parse::{Locator, Section};
+use crate::kb::chunk::tokens;
 use crate::store::{get_setting, set_setting};
 use crate::{Error, Result};
 
@@ -290,35 +289,44 @@ pub fn is_public_ip(ip: IpAddr) -> bool {
     }
 }
 
-/// 从一长段文字里挑出与问题用词重合最多的几段，总长不超过 `budget` 字。保持原文顺序。
+/// 从一长段文字里挑出与问题用词有重合的行，重合多的优先，总长不超过 `budget` 字，保持原文顺序。
+/// 一行都对不上时取开头部分。按行挑是为了甩掉网页里的导航、页脚这类无关内容。
 pub fn best_passages(text: &str, query: &str, budget: usize) -> String {
     let wanted: std::collections::HashSet<String> = tokens(query).into_iter().collect();
-    let pieces = chunk(&[Section { locator: Locator::None, text: text.to_string() }]);
-    let mut scored: Vec<(usize, usize, usize)> = pieces
+    let lines: Vec<&str> = text.lines().map(str::trim).filter(|l| !l.is_empty()).collect();
+    let mut scored: Vec<(usize, usize)> = lines
         .iter()
         .enumerate()
-        .map(|(i, p)| {
-            let have: std::collections::HashSet<String> = tokens(&p.text).into_iter().collect();
-            (wanted.intersection(&have).count(), i, p.text.chars().count())
+        .map(|(i, line)| {
+            let have: std::collections::HashSet<String> = tokens(line).into_iter().collect();
+            (wanted.intersection(&have).count(), i)
         })
+        .filter(|(score, _)| *score > 0)
         .collect();
-    // 重合多的在前；一样多时靠前的段落在前（网页开头通常是正文要点）
+    if scored.is_empty() {
+        return lines.join("\n").chars().take(budget).collect();
+    }
     scored.sort_by(|a, b| b.0.cmp(&a.0).then(a.1.cmp(&b.1)));
     let mut picked: Vec<usize> = Vec::new();
     let mut used = 0;
-    for (_, i, len) in scored {
+    for (_, i) in scored {
+        let len = lines[i].chars().count() + 1;
         if used + len > budget && !picked.is_empty() {
             continue;
         }
         picked.push(i);
         used += len;
-        if used >= budget {
-            break;
-        }
     }
     picked.sort();
-    let joined = picked.iter().map(|&i| pieces[i].text.as_str()).collect::<Vec<_>>().join("\n…\n");
-    joined.chars().take(budget).collect()
+    // 不相邻的行之间加省略号，表示中间略去了内容
+    let mut out = String::new();
+    for (n, &i) in picked.iter().enumerate() {
+        if n > 0 {
+            out.push_str(if picked[n - 1] + 1 == i { "\n" } else { "\n…\n" });
+        }
+        out.push_str(lines[i]);
+    }
+    out.chars().take(budget).collect()
 }
 
 #[cfg(test)]
@@ -353,7 +361,9 @@ mod tests {
         let text = format!("{filler}\n屏幕属于主要部件，保修期为二十四个月，自购买之日起计算。\n{filler}");
         let got = best_passages(&text, "屏幕保修多久", 700);
         assert!(got.contains("保修期为二十四个月"), "{got}");
-        assert!(got.chars().count() <= 700);
+        assert!(!got.contains("网站导航"), "unrelated lines are left out: {got}");
+        // 一行都对不上：取开头
+        assert!(best_passages("第一行\n第二行", "xyz", 100).starts_with("第一行"));
         assert_eq!(best_passages("", "x", 100), "");
     }
 

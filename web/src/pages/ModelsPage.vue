@@ -1,11 +1,13 @@
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from "vue";
+import { useI18n } from "vue-i18n";
 
 import { api, kb, type ModelRef, type Provider, type ProviderInput } from "../api";
 import Icon from "../components/Icon.vue";
 import { errorText } from "../i18n";
 import { checkProvider, loadProviders, modelOptions, state } from "../state";
 
+const { t } = useI18n();
 const error = ref("");
 const formError = ref("");
 const saving = ref(false);
@@ -40,6 +42,41 @@ async function saveKb() {
     error.value = errorText(e);
   }
 }
+// 联网搜索
+const webForm = reactive({ kind: "none", base_url: "", api_key: "", fetch_pages: false, has_key: false });
+const webMsg = ref<{ ok: boolean; text: string } | null>(null);
+const webBusy = ref(false);
+onMounted(async () => {
+  try {
+    Object.assign(webForm, await api.webSettings(), { api_key: "" });
+  } catch (e) {
+    error.value = errorText(e);
+  }
+});
+async function saveWeb(): Promise<boolean> {
+  webMsg.value = null;
+  try {
+    const saved = await api.saveWebSettings({ kind: webForm.kind, base_url: webForm.base_url, fetch_pages: webForm.fetch_pages, ...(webForm.api_key ? { api_key: webForm.api_key } : {}) });
+    Object.assign(webForm, saved, { api_key: "" });
+    return true;
+  } catch (e) {
+    webMsg.value = { ok: false, text: errorText(e) };
+    return false;
+  }
+}
+async function testWeb() {
+  webBusy.value = true;
+  try {
+    if (!(await saveWeb())) return;
+    const r = await api.testWeb(t("web.testQuery"));
+    webMsg.value = { ok: true, text: t("web.testOk", { n: r.results.length }) };
+  } catch (e) {
+    webMsg.value = { ok: false, text: errorText(e) };
+  } finally {
+    webBusy.value = false;
+  }
+}
+
 /** 已保存的选择不在当前可选列表里时也要能显示出来。 */
 const extra = (v: string) => (v && !options.value.some((o) => `${o.providerId}\n${o.model}` === v) ? v : "");
 
@@ -136,6 +173,22 @@ async function remove(id: string) {
       <span>{{ $t(`kb.${which}Hint`) }}</span>
     </label>
   </div>
+
+  <form class="card form" @submit.prevent="testWeb">
+    <div><h2>{{ $t("web.title") }}</h2><p class="muted" style="margin-top: 4px">{{ $t("web.subtitle") }}</p></div>
+    <label class="field">
+      <span>{{ $t("web.kind") }}</span>
+      <select v-model="webForm.kind" @change="webForm.kind === 'searxng' && !webForm.base_url ? (webMsg = null) : saveWeb()">
+        <option v-for="k in ['none', 'searxng', 'tavily', 'bocha']" :key="k" :value="k">{{ $t(`web.${k}`) }}</option>
+      </select>
+    </label>
+    <label v-if="webForm.kind === 'searxng'" class="field"><span>{{ $t("web.baseUrl") }}</span><input v-model="webForm.base_url" type="text" placeholder="http://127.0.0.1:8888" spellcheck="false" autocapitalize="off" /></label>
+    <label v-if="webForm.kind === 'tavily' || webForm.kind === 'bocha'" class="field"><span>{{ $t("models.apiKey") }}</span><input v-model="webForm.api_key" type="password" autocomplete="off" :placeholder="webForm.has_key ? $t('models.apiKeyKeep') : ''" /></label>
+    <template v-if="webForm.kind !== 'none'">
+      <label class="row"><input v-model="webForm.fetch_pages" type="checkbox" @change="saveWeb" />{{ $t("web.fetchPages") }}</label>
+      <div class="row"><button class="btn ghost sm" type="submit" :disabled="webBusy">{{ $t("web.test") }}</button><span v-if="webMsg" class="tag" :class="webMsg.ok ? 'ok' : 'err'">{{ webMsg.ok ? "✓" : "×" }} {{ webMsg.text }}</span></div>
+    </template>
+  </form>
 
   <template v-if="editing !== null">
     <div class="mask" @click="editing = null" />

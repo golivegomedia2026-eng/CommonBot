@@ -21,6 +21,8 @@ const form = reactive({
   examples: (a?.examples ?? []).join("\n"),
   model: a?.model ? `${a.provider_id}\n${a.model}` : "",
   folders: [...(a?.folders ?? [])],
+  web: a?.web ?? "off",
+  allow_cloud: a?.allow_cloud ?? false,
 });
 const error = ref("");
 const saving = ref(false);
@@ -43,6 +45,8 @@ function input(): AgentInput {
     examples: form.examples.split("\n").map((l) => l.trim()).filter(Boolean),
     provider_id,
     model,
+    web: form.web,
+    allow_cloud: form.allow_cloud,
     // 已被删除的文件夹不再保留
     folders: state.foldersLoaded ? form.folders.filter((id) => state.folders.some((f) => f.id === id)) : form.folders,
   };
@@ -122,6 +126,13 @@ async function remove() {
       <FolderPicker v-model="form.folders" />
       <span>{{ $t("kb.agentFoldersHint") }}</span>
     </div>
+    <div class="field">
+      <span>{{ $t("web.agentMode") }}</span>
+      <div class="seg">
+        <button v-for="m in ['off', 'fallback', 'always'] as const" :key="m" type="button" :aria-pressed="form.web === m" @click="form.web = m">{{ $t(`web.mode${m[0].toUpperCase()}${m.slice(1)}`) }}</button>
+      </div>
+      <span>{{ $t("web.modeHint") }}</span>
+    </div>
     <label class="field">
       <span>{{ $t("agents.model") }}</span>
       <select v-model="form.model">
@@ -130,6 +141,10 @@ async function remove() {
         <option v-for="o in options" :key="`${o.providerId}\n${o.model}`" :value="`${o.providerId}\n${o.model}`">{{ o.label }}</option>
       </select>
     </label>
+    <div class="field">
+      <label class="row"><input v-model="form.allow_cloud" type="checkbox" />{{ $t("web.allowCloud") }}</label>
+      <span>{{ $t("web.allowCloudHint") }}</span>
+    </div>
     <details>
       <summary>{{ $t("agents.prompt") }}</summary>
       <pre>{{ prompt }}</pre>

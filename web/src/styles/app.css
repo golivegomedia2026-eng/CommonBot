@@ -224,3 +224,16 @@ tbody tr:hover { background: var(--hover-bg); }
   .tree .node { width: auto; flex: none; padding: 6px 10px !important; }
   .tree .node i, .tree .newf { display: none; }
 }
+
+/* 对话里的文件 */
+.composer.over { border-color: var(--accent); background: var(--accent-soft); }
+.composer .atts { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px 0; }
+.files { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; white-space: normal; }
+.att { display: inline-flex; align-items: center; gap: 6px; padding: 3px 6px 3px 4px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; max-width: 100%; min-width: 0; }
+.composer .att { background: var(--inset); }
+.att em { font: 600 10px var(--font-mono); font-style: normal; padding: 2px 4px; border-radius: 4px; background: var(--inset); color: var(--text-2); }
+.composer .att em { background: var(--surface); }
+.att > span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
+.att .x { border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--text-3); display: grid; }
+.att .x:hover { color: var(--danger); }
+.att .warn { font-style: normal; color: var(--warn); font-weight: 700; }

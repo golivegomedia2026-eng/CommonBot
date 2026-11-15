@@ -248,7 +248,7 @@ mod tests {
         let small = vec![file("a.txt", "保修两年".into())];
         assert_eq!(context(&small, "保修")[0].1, "保修两年");
 
-        let filler = "这一句和问题没有关系，只是用来占位置的内容。".repeat(900);
+        let filler = "这一句和问题没有关系，只是用来占位置的内容。\n".repeat(900);
         let big = vec![
             file("big.txt", format!("{filler}\n投标保证金为人民币五万元，须在开标前缴纳。\n{filler}")),
             file("b.txt", "短文件".into()),

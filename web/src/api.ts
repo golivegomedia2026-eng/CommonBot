@@ -28,6 +28,8 @@ export interface Agent {
   provider_id: string | null;
   model: string | null;
   folders: string[];
+  web: "off" | "fallback" | "always";
+  allow_cloud: boolean;
   updated_at: number;
   system_prompt?: string;
 }
@@ -35,17 +37,26 @@ export interface AgentSummary extends Agent {
   conversations: number;
   last_used_at: number | null;
 }
-export type AgentInput = Pick<Agent, "name" | "description" | "duty" | "out_of_scope" | "instructions" | "opening" | "examples" | "provider_id" | "model" | "folders">;
+export type AgentInput = Pick<Agent, "name" | "description" | "duty" | "out_of_scope" | "instructions" | "opening" | "examples" | "provider_id" | "model" | "folders" | "web" | "allow_cloud">;
 
 export type Locator = { kind: "none" } | { kind: "page" | "slide"; value: number } | { kind: "sheet" | "heading"; value: string };
-export interface Source {
-  n: number;
-  kind: "kb";
-  document_id: string;
-  document: string;
-  folder: string;
-  locator: Locator;
-  text: string;
+export type Source =
+  | { n: number; kind: "kb"; document_id: string; document: string; folder: string; locator: Locator; text: string }
+  | { n: number; kind: "file"; document: string; text: string }
+  | { n: number; kind: "web"; title: string; url: string; text: string };
+export interface Attachment {
+  id: string;
+  message_id: string | null;
+  name: string;
+  size: number;
+  chars: number;
+  skipped_pages: number;
+}
+export interface WebSettings {
+  kind: "none" | "searxng" | "tavily" | "bocha";
+  base_url: string;
+  has_key: boolean;
+  fetch_pages: boolean;
 }
 export interface Folder {
   id: string;
@@ -100,6 +111,7 @@ export interface Conversation {
   id: string;
   agent_id: string;
   scope: string[] | null;
+  web: boolean | null;
   title: string;
   provider_id: string | null;
   model: string | null;
@@ -115,6 +127,8 @@ export interface Message {
   status: "ok" | "stopped" | "error";
   error_code: string | null;
   sources: Source[];
+  model: string | null;
+  cloud: boolean;
   created_at: number;
 }
 export interface Health {
@@ -190,7 +204,24 @@ export const api = {
 
   conversations: (agentId: string) => call<Conversation[]>("GET", `/conversations?agent_id=${encodeURIComponent(agentId)}`),
   createConversation: (agentId: string) => call<Conversation>("POST", "/conversations", { agent_id: agentId }),
-  conversation: (id: string) => call<{ conversation: Conversation; messages: Message[] }>("GET", `/conversations/${id}`),
+  conversation: (id: string) => call<{ conversation: Conversation; messages: Message[]; attachments: Attachment[] }>("GET", `/conversations/${id}`),
+  removeAttachment: (conversationId: string, id: string) => call<void>("DELETE", `/conversations/${conversationId}/attachments/${id}`),
+  /** 给对话上传文件；读不了的在 rejected 里逐个说明。 */
+  async attach(conversationId: string, files: File[]): Promise<{ added: Attachment[]; rejected: { name: string; code: string }[] }> {
+    const form = new FormData();
+    files.forEach((f) => form.append("files", f, f.name));
+    let resp: Response;
+    try {
+      resp = await fetch(`/api/conversations/${conversationId}/attachments`, { method: "POST", body: form });
+    } catch (e) {
+      throw new ApiError(0, "upload_failed", String(e));
+    }
+    if (!resp.ok) throw await toError(resp);
+    return resp.json();
+  },
+  webSettings: () => call<WebSettings>("GET", "/settings/web"),
+  saveWebSettings: (s: { kind: string; base_url: string; api_key?: string; fetch_pages: boolean }) => call<WebSettings>("PUT", "/settings/web", s),
+  testWeb: (query: string) => call<{ results: { title: string; url: string; text: string }[] }>("POST", "/settings/web/test", { query }),
   renameConversation: (id: string, title: string) => call<Conversation>("PATCH", `/conversations/${id}`, { title }),
   deleteConversation: (id: string) => call<void>("DELETE", `/conversations/${id}`),
 };
@@ -232,8 +263,9 @@ export const kb = {
 };
 
 export type StreamEvent =
-  | { type: "user"; message: Message; conversation: Conversation }
-  | { type: "sources"; sources: Source[]; semantic: boolean; note: string | null }
+  | { type: "user"; message: Message; conversation: Conversation; attachments: Attachment[] }
+  | { type: "fallback"; model: string; provider: string }
+  | { type: "sources"; sources: Source[]; semantic: boolean; note: string | null; web_note: string | null }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
   | { type: "done"; message: Message }
@@ -264,7 +296,7 @@ export function parseEvents(buffer: string): { events: StreamEvent[]; rest: stri
 /** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
 export async function sendMessage(
   conversationId: string,
-  body: { content: string; provider_id?: string; model?: string; scope?: string[] },
+  body: { content: string; provider_id?: string; model?: string; scope?: string[]; web?: boolean; attachment_ids?: string[] },
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

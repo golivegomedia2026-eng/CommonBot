@@ -2,6 +2,7 @@
 // 统一的输入区。目前有模型选择；上传文件、知识范围、联网等选项随对应功能加入。
 import { computed, nextTick, onBeforeUnmount, ref, watch } from "vue";
 
+import type { Attachment } from "../api";
 import { folderPath, modelOptions, select, state } from "../state";
 import FolderPicker from "./FolderPicker.vue";
 import Icon from "./Icon.vue";
@@ -15,8 +16,44 @@ const props = defineProps<{
   scope?: string[] | null;
   /** 智能体默认查的文件夹。 */
   defaultScope?: string[];
+  /** 这次对话是否联网；null 表示按智能体的默认。不传则不显示开关。 */
+  web?: boolean | null;
+  defaultWeb?: boolean;
+  /** 已读好、等着随下一条消息发出的文件。不传则不显示上传。 */
+  attachments?: Attachment[];
+  attaching?: boolean;
 }>();
-const emit = defineEmits<{ "update:modelValue": [string]; "update:scope": [string[] | null]; send: []; stop: [] }>();
+const emit = defineEmits<{
+  "update:modelValue": [string];
+  "update:scope": [string[] | null];
+  "update:web": [boolean | null];
+  attach: [File[]];
+  detach: [string];
+  send: [];
+  stop: [];
+}>();
+
+const filePicker = ref<HTMLInputElement>();
+const dragging = ref(false);
+const webOn = computed(() => props.web ?? props.defaultWeb ?? false);
+function toggleWeb() {
+  // 点回和智能体默认一致的状态时，恢复为「按默认」
+  const next = !webOn.value;
+  emit("update:web", next === (props.defaultWeb ?? false) ? null : next);
+}
+function chosen(files: FileList | null | undefined) {
+  const list = Array.from(files ?? []);
+  if (list.length) emit("attach", list);
+  if (filePicker.value) filePicker.value.value = "";
+}
+function pasted(e: ClipboardEvent) {
+  // 粘贴截图或文件时当作上传；粘贴文字不受影响
+  const files = Array.from(e.clipboardData?.files ?? []);
+  if (files.length && props.attachments) {
+    e.preventDefault();
+    emit("attach", files);
+  }
+}
 
 const popOpen = ref(false);
 const effective = computed(() => props.scope ?? props.defaultScope ?? []);
@@ -45,7 +82,7 @@ const picked = computed({
     select(providerId, model);
   },
 });
-const canSend = computed(() => !props.busy && props.modelValue.trim() !== "" && (!!props.lockedModel || state.selection.model !== ""));
+const canSend = computed(() => !props.busy && !props.attaching && props.modelValue.trim() !== "" && (!!props.lockedModel || state.selection.model !== ""));
 
 function resize() {
   const el = box.value;
@@ -65,7 +102,14 @@ defineExpose({ focus: () => box.value?.focus() });
 </script>
 
 <template>
-  <div class="composer">
+  <div class="composer" :class="{ over: dragging }" @dragover.prevent="dragging = !!attachments" @dragleave="dragging = false" @drop.prevent="dragging = false; attachments && chosen($event.dataTransfer?.files)">
+    <div v-if="attachments?.length || attaching" class="atts">
+      <span v-for="f in attachments" :key="f.id" class="att" :title="f.skipped_pages ? $t('web.skipped', { n: f.skipped_pages }) : f.name">
+        <em>{{ f.name.split(".").pop()?.toUpperCase().slice(0, 4) }}</em><span>{{ f.name }}</span><i v-if="f.skipped_pages" class="warn">!</i>
+        <button type="button" class="x" :aria-label="$t('web.remove')" @click="emit('detach', f.id)"><Icon name="x" /></button>
+      </span>
+      <span v-if="attaching" class="att"><span>{{ $t("web.uploading") }}</span></span>
+    </div>
     <textarea
       ref="box"
       rows="2"
@@ -74,8 +118,13 @@ defineExpose({ focus: () => box.value?.focus() });
       :aria-label="placeholder"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
       @keydown="onKey"
+      @paste="pasted"
     />
     <div class="tools">
+      <template v-if="attachments">
+        <button type="button" class="chip" :disabled="attaching" @click="filePicker?.click()"><Icon name="clip" />{{ $t("web.upload") }}</button>
+        <input ref="filePicker" type="file" multiple hidden @change="chosen(($event.target as HTMLInputElement).files)" />
+      </template>
       <span v-if="scope !== undefined && state.folders.length" class="pw">
         <div v-if="popOpen" class="pop">
           <b>{{ $t("kb.scopeTitle") }}</b>
@@ -88,6 +137,7 @@ defineExpose({ focus: () => box.value?.focus() });
           <Icon name="folder" /><span>{{ scopeLabel || $t("kb.scopeNone") }}</span> ▾
         </button>
       </span>
+      <button v-if="web !== undefined" type="button" class="chip" :aria-pressed="webOn" @click="toggleWeb"><Icon name="globe" />{{ $t("web.chip") }}</button>
       <span v-if="lockedModel" class="chip" style="cursor: default" :title="$t('agents.lockedModel')"><Icon name="chip" />{{ lockedModel }}</span>
       <label v-else-if="options.length" class="chip" :title="$t('chat.pickModel')">
         <Icon name="chip" />
