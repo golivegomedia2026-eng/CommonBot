@@ -7,7 +7,8 @@ import { folderPath, modelOptions, select, state } from "../state";
 import FolderPicker from "./FolderPicker.vue";
 import Icon from "./Icon.vue";
 
-const props = defineProps<{
+// 布尔类型的属性不传时会被当成 false；这里显式设为「没传」，才能区分「不显示开关」和「关着」
+const props = withDefaults(defineProps<{
   modelValue: string;
   busy: boolean;
   placeholder: string;
@@ -22,7 +23,7 @@ const props = defineProps<{
   /** 已读好、等着随下一条消息发出的文件。不传则不显示上传。 */
   attachments?: Attachment[];
   attaching?: boolean;
-}>();
+}>(), { web: undefined, defaultWeb: undefined, lockedModel: undefined, scope: undefined });
 const emit = defineEmits<{
   "update:modelValue": [string];
   "update:scope": [string[] | null];

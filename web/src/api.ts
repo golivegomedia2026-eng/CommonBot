@@ -30,8 +30,34 @@ export interface Agent {
   folders: string[];
   web: "off" | "fallback" | "always";
   allow_cloud: boolean;
+  public_token: string | null;
+  api_key: string | null;
   updated_at: number;
   system_prompt?: string;
+}
+export interface TestCase {
+  question: string;
+  expect: string;
+  answer: string | null;
+  pass: boolean | null;
+  reason: string;
+}
+export interface Draft extends AgentInput {
+  manual: string[];
+}
+export interface Build {
+  id: string;
+  conversation_id: string;
+  draft: Draft;
+  tests: TestCase[];
+  agent_id: string | null;
+  updated_at: number;
+}
+export interface PublicInfo {
+  name: string;
+  description: string;
+  opening: string;
+  examples: string[];
 }
 export interface AgentSummary extends Agent {
   conversations: number;
@@ -200,6 +226,18 @@ export const api = {
   createAgent: (input: AgentInput) => call<Agent>("POST", "/agents", input),
   updateAgent: (id: string, input: AgentInput) => call<Agent>("PUT", `/agents/${id}`, input),
   deleteAgent: (id: string) => call<void>("DELETE", `/agents/${id}`),
+  publishAgent: (id: string) => call<Agent>("POST", `/agents/${id}/publish`),
+  unpublishAgent: (id: string) => call<Agent>("DELETE", `/agents/${id}/publish`),
+  rotateAgentKey: (id: string) => call<Agent>("POST", `/agents/${id}/rotate-key`),
+  builds: () => call<Build[]>("GET", "/builds"),
+  createBuild: (opening: string) => call<Build>("POST", "/builds", { opening }),
+  build: (id: string) => call<{ build: Build; messages: Message[]; attachments: Attachment[] }>("GET", `/builds/${id}`),
+  deleteBuild: (id: string) => call<void>("DELETE", `/builds/${id}`),
+  saveDraft: (id: string, input: AgentInput) => call<Build>("PUT", `/builds/${id}/draft`, input),
+  publishBuild: (id: string, model: { provider_id: string; model: string }) => call<Agent>("POST", `/builds/${id}/publish`, model),
+  publicInfo: (token: string) => call<PublicInfo>("GET", `/public/${token}`),
+  publicNewConversation: (token: string) => call<{ id: string }>("POST", `/public/${token}/conversations`),
+  publicConversation: (token: string, id: string) => call<{ messages: Message[] }>("GET", `/public/${token}/conversations/${id}`),
   previewPrompt: (input: AgentInput, signal?: AbortSignal) => call<{ system_prompt: string }>("POST", "/agents/prompt-preview", input, signal),
 
   conversations: (agentId: string) => call<Conversation[]>("GET", `/conversations?agent_id=${encodeURIComponent(agentId)}`),
@@ -268,7 +306,11 @@ export type StreamEvent =
   | { type: "sources"; sources: Source[]; semantic: boolean; note: string | null; web_note: string | null }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
-  | { type: "done"; message: Message }
+  | { type: "draft"; draft: Draft }
+  | { type: "draft_error"; code: string }
+  | { type: "tests"; tests: TestCase[] }
+  | { type: "test"; index: number; test: TestCase }
+  | { type: "done"; message: Message; tests?: TestCase[] }
   | { type: "error"; code: string; detail: string; message?: Message };
 
 /** 把事件流的文本拆成事件。数据块可能在任意位置断开，没收完的部分留在返回的 rest 里。 */
@@ -293,16 +335,11 @@ export function parseEvents(buffer: string): { events: StreamEvent[]; rest: stri
   return { events, rest };
 }
 
-/** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
-export async function sendMessage(
-  conversationId: string,
-  body: { content: string; provider_id?: string; model?: string; scope?: string[]; web?: boolean; attachment_ids?: string[] },
-  onEvent: (e: StreamEvent) => void,
-  signal: AbortSignal,
-): Promise<void> {
+/** 发一个请求并逐个接收事件流里的事件。中止 signal 即停止。 */
+export async function postStream(path: string, body: unknown, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
   let resp: Response;
   try {
-    resp = await fetch(`/api/conversations/${conversationId}/messages`, {
+    resp = await fetch(`/api${path}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(body),
@@ -324,4 +361,14 @@ export async function sendMessage(
     buffer = parsed.rest;
     parsed.events.forEach(onEvent);
   }
+}
+
+/** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
+export function sendMessage(
+  conversationId: string,
+  body: { content: string; provider_id?: string; model?: string; scope?: string[]; web?: boolean; attachment_ids?: string[] },
+  onEvent: (e: StreamEvent) => void,
+  signal: AbortSignal,
+): Promise<void> {
+  return postStream(`/conversations/${conversationId}/messages`, body, onEvent, signal);
 }

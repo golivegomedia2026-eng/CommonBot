@@ -141,8 +141,8 @@ input[type=checkbox] { accent-color: var(--accent); }
   main { padding: 16px 12px 12px; gap: 12px; }
   h1 { font-size: 22px; }
   .msg { max-width: 90%; }
-  .tabbar { display: grid; grid-template-columns: repeat(4, 1fr); flex: none; background: var(--nav-bg); border-top: 1px solid var(--nav-line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
-  .tabbar .link { text-align: center; padding: 8px 2px; font-size: 13px; }
+  .tabbar { display: grid; grid-template-columns: repeat(5, 1fr); flex: none; background: var(--nav-bg); border-top: 1px solid var(--nav-line); padding: 6px 4px calc(6px + env(safe-area-inset-bottom)); }
+  .tabbar .link { text-align: center; padding: 8px 2px; font-size: 12.5px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .tabbar .link.on::before { left: 30%; right: 30%; top: auto; bottom: 2px; width: auto; height: 3px; }
 }
 @media (min-width: 901px) { .only-narrow { display: none !important; } }
@@ -237,3 +237,35 @@ tbody tr:hover { background: var(--hover-bg); }
 .att .x { border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--text-3); display: grid; }
 .att .x:hover { color: var(--danger); }
 .att .warn { font-style: normal; color: var(--warn); font-weight: 700; }
+
+/* 建造师 */
+.steps { display: flex; gap: 6px; flex-wrap: wrap; counter-reset: s; }
+.step { counter-increment: s; display: flex; align-items: center; gap: 6px; padding: 4px 12px 4px 6px; border-radius: 999px; border: 1px solid var(--line); background: var(--surface); color: var(--text-3); font-size: 12.5px; }
+.step::before { content: counter(s); width: 18px; height: 18px; border-radius: 50%; display: grid; place-items: center; font-size: 11px; background: var(--inset); color: var(--text-2); }
+.step.done { color: var(--text-2); } .step.done::before { content: "✓"; background: var(--ok-bg); color: var(--ok); }
+.step.now { border-color: var(--accent); color: var(--accent); font-weight: 600; } .step.now::before { background: var(--accent); color: var(--on-accent); }
+.buildpage { flex: 1; min-height: 0; display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 16px; }
+.buildside { display: flex; flex-direction: column; gap: 16px; min-width: 0; overflow-y: auto; }
+.spec dl { margin: 0; display: grid; grid-template-columns: 7em minmax(0, 1fr); gap: 8px 12px; }
+.spec dt { color: var(--text-3); font-size: 12.5px; } .spec dd { margin: 0; overflow-wrap: anywhere; white-space: pre-wrap; }
+.spec .todo { color: var(--warn); }
+.tests { display: flex; flex-direction: column; gap: 6px; }
+.test { padding: 8px 10px; border-radius: 8px; background: var(--inset); }
+.test > summary { display: flex; gap: 8px; align-items: flex-start; cursor: pointer; list-style: none; }
+.test > summary::-webkit-details-marker { display: none; }
+.test > summary span:first-child { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.test .more { margin-top: 8px; padding-top: 8px; border-top: 1px dashed var(--line-strong); font-size: 12.5px; color: var(--text-2); white-space: pre-wrap; overflow-wrap: anywhere; }
+.test .more b { color: var(--text-3); font-weight: 500; }
+@media (max-width: 900px) {
+  .buildpage { grid-template-columns: 1fr; overflow-y: auto; }
+  .buildpage .chat { min-height: 60vh; }
+  .buildside { overflow: visible; }
+}
+
+/* 访客的独立对话页 */
+.pubpage { height: 100%; display: flex; flex-direction: column; max-width: 860px; margin: 0 auto; padding: 16px clamp(12px, 3vw, 24px) 10px; gap: 12px; }
+.pubhead { display: flex; align-items: center; gap: 12px; flex: none; }
+.pubhead .grow { min-width: 0; }
+.pubhead h1 { font-size: 20px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pubpage .chat { flex: 1; }
+.pubfoot { text-align: center; color: var(--text-3); font-size: 11.5px; flex: none; }

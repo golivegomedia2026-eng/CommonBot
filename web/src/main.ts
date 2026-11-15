@@ -8,7 +8,8 @@ import { i18n } from "./i18n";
 import { router } from "./router";
 
 hooks.onAccessRequired = () => {
-  if (router.currentRoute.value.name !== "access") void router.replace({ name: "access" });
+  const r = router.currentRoute.value;
+  if (r.name !== "access" && !r.meta.public) void router.replace({ name: "access" });
 };
 
 createApp(App)

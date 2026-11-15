@@ -2,7 +2,7 @@
 
 通用智能体平台：新建智能体并定义职责、为智能体建知识库（可结合联网回答）、通过对话生成新的智能体。主机为 NVIDIA DGX Spark，Rust 实现。
 
-当前阶段：**P3 联网已完成**——智能体可以依据知识库、联网结果和对话里上传的文件回答；建造师、客户端和安装包在后续阶段。
+当前阶段：**P4 建造师与发布已完成**——三项基本要求（新建智能体并定义任务、知识库加联网回答、通过对话生成可独立使用的智能体）都已实现；客户端外壳、安装包和语音在后续阶段。
 
 - 方案：[docs/v1/PLAN.md](docs/v1/PLAN.md)
 - 决策：[docs/v1/DECISIONS.md](docs/v1/DECISIONS.md)
@@ -11,6 +11,8 @@
 
 ## 现在能做什么
 
+- 建造师：和它对话，它把访谈整理成智能体的定义（手动改过的字段不会被覆盖），出题试答并评判，确认后发布
+- 发布：每个智能体可以有独立链接（访客不需要访问码，只能用到这一个智能体）和 API 密钥（兼容 OpenAI 的接口，流式和非流式都支持）；可随时取消发布或更换密钥
 - 新建智能体：写清负责什么、不负责什么、开场白和示例问题，可固定使用某个模型；系统提示词由这些内容生成并可预览
 - 每个智能体有自己的对话记录
 - 知识库：多级文件夹；上传 PDF、Word、PowerPoint、Excel、文本、Markdown、网页、图片；扫描件由看图模型识别；入库在后台排队，可暂停、重试
@@ -91,9 +93,13 @@ cargo test --workspace
 | --- | --- |
 | ![联网](docs/screenshots/p3-chat-web.png) | ![文件](docs/screenshots/p3-chat-files.png) |
 
-| 联网搜索设置 | 云端后备 |
+| 建造师：访谈、草稿、试答 | 发布后的链接与密钥 |
 | --- | --- |
-| ![设置](docs/screenshots/p3-web-settings.png) | ![云端](docs/screenshots/p3-chat-cloud.png) |
+| ![建造师](docs/screenshots/p4-builder.png) | ![发布](docs/screenshots/p4-builder-published.png) |
+
+| 访客的独立对话页（手机） | 云端后备 |
+| --- | --- |
+| ![访客](docs/screenshots/p4-public-phone.png) | ![云端](docs/screenshots/p3-chat-cloud.png) |
 
 | 智能体列表 | 配置抽屉 | 手机 |
 | --- | --- | --- |

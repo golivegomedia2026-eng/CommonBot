@@ -34,7 +34,8 @@ function created(a: Agent) {
       <div class="eyebrow">{{ $t("nav.workbench") }}</div>
       <h1>{{ $t("agents.title") }}</h1>
     </div>
-    <button class="btn primary" @click="creating = true"><Icon name="plus" />{{ $t("agents.new") }}</button>
+    <RouterLink class="btn primary" to="/builder">{{ $t("agents.byTalking") }}</RouterLink>
+    <button class="btn ghost" @click="creating = true"><Icon name="plus" />{{ $t("agents.manual") }}</button>
   </header>
   <div v-if="error" class="alert err" role="alert">{{ error }}</div>
   <div v-if="loaded && !agents.length && !error" class="card empty">
@@ -51,7 +52,7 @@ function created(a: Agent) {
         </div>
       </div>
       <p v-if="a.description || a.duty">{{ a.description || a.duty }}</p>
-      <div v-if="a.model" class="row"><span class="tag">{{ a.model }}</span></div>
+      <div v-if="a.model || a.public_token" class="row"><span v-if="a.model" class="tag">{{ a.model }}</span><span v-if="a.public_token" class="tag ok">{{ $t("agents.publishedTag") }}</span></div>
     </RouterLink>
   </div>
   <AgentConfig v-if="creating" :agent="null" @close="creating = false" @saved="created" />

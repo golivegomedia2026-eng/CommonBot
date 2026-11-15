@@ -13,8 +13,10 @@ const failed = ref("");
 async function boot() {
   failed.value = "";
   try {
+    await router.isReady();
     state.health = await api.health();
-    if (!state.health.authed) await router.replace({ name: "access" });
+    // 发布出去的独立页面凭链接进入，不需要访问码
+    if (!state.health.authed && !route.meta.public) await router.replace({ name: "access" });
   } catch (e) {
     failed.value = errorText(e);
   }
@@ -35,6 +37,7 @@ onMounted(boot);
       <div class="brand"><span class="logo">智</span><b>CommonBot</b></div>
       <span class="group">{{ $t("nav.workbench") }}</span>
       <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
+      <RouterLink class="link" :class="{ on: route.name === 'builder' }" to="/builder">{{ $t("nav.builder") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'kb' }" to="/kb">{{ $t("nav.kb") }}</RouterLink>
       <span class="group">{{ $t("nav.settings") }}</span>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
@@ -48,6 +51,7 @@ onMounted(boot);
     <main><RouterView /></main>
     <nav class="tabbar" :aria-label="$t('nav.workbench')">
       <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
+      <RouterLink class="link" :class="{ on: route.name === 'builder' }" to="/builder">{{ $t("nav.builder") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'kb' }" to="/kb">{{ $t("nav.kb") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>

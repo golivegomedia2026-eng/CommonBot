@@ -6,10 +6,10 @@ import { type Agent, api, ApiError, type Attachment, type Conversation, type Mes
 import AgentConfig from "../components/AgentConfig.vue";
 import Composer from "../components/Composer.vue";
 import Icon from "../components/Icon.vue";
-import { errorCodeText, errorText, locText } from "../i18n";
-import { renderMarkdown } from "../md";
+import ReplyBody from "../components/ReplyBody.vue";
+import { errorCodeText, errorText } from "../i18n";
 import { loadFolders, loadProviders, state } from "../state";
-import { copyText, isToday, linkCitations } from "../util";
+import { isToday } from "../util";
 
 const route = useRoute();
 const router = useRouter();
@@ -33,12 +33,9 @@ const filesOf = (messageId: string) => attachments.value.filter((f) => f.message
 const webNote = ref("");
 /** 这次对话查哪些文件夹；null 表示按智能体的默认。 */
 const scope = ref<string[] | null>(null);
-/** 展开看原文的出处：消息编号 + 出处编号 */
-const openSource = ref("");
 const error = ref("");
 const histOpen = ref(false);
 const confirming = ref("");
-const copied = ref("");
 const scroller = ref<HTMLElement>();
 const composer = ref<InstanceType<typeof Composer>>();
 let abort: AbortController | null = null;
@@ -193,7 +190,7 @@ async function send(text?: string) {
           live.content += e.text;
         } else if (e.type === "reasoning") {
           live.reasoning += e.text;
-        } else {
+        } else if (e.type === "done" || e.type === "error") {
           if (e.message) messages.value.push(e.message);
           else if (e.type === "error") error.value = errorCodeText(e.code, e.detail);
           webNote.value = live.webNote;
@@ -247,22 +244,6 @@ function saved(a: Agent) {
   configuring.value = false;
 }
 
-/** 点回答里的出处编号：展开对应的原文片段。 */
-function citeClick(e: MouseEvent, messageId: string) {
-  const n = (e.target as HTMLElement).closest<HTMLElement>("[data-cite]")?.dataset.cite;
-  if (n) toggleSource(messageId, Number(n));
-}
-function toggleSource(messageId: string, n: number) {
-  const key = `${messageId}:${n}`;
-  openSource.value = openSource.value === key ? "" : key;
-}
-
-async function copy(m: Message) {
-  if (await copyText(m.content)) {
-    copied.value = m.id;
-    setTimeout(() => copied.value === m.id && (copied.value = ""), 1500);
-  }
-}
 </script>
 
 <template>
@@ -298,39 +279,11 @@ async function copy(m: Message) {
         </div>
         <template v-for="m in messages" :key="m.id">
           <div v-if="m.role === 'user'" class="msg me"><div v-if="filesOf(m.id).length" class="files"><span v-for="f in filesOf(m.id)" :key="f.id" class="att"><em>{{ f.name.split(".").pop()?.toUpperCase().slice(0, 4) }}</em><span>{{ f.name }}</span></span></div>{{ m.content }}</div>
-          <div v-else class="msg bot">
-            <details v-if="m.reasoning"><summary>{{ $t("chat.thinking") }}</summary><div>{{ m.reasoning }}</div></details>
-            <div v-if="m.content" class="md" @click="citeClick($event, m.id)" v-html="linkCitations(renderMarkdown(m.content), m.sources.length)" />
-            <div v-if="m.sources.length" class="srcs">
-              <template v-for="kind in ['kb', 'file', 'web'] as const" :key="kind">
-                <template v-if="m.sources.some((s) => s.kind === kind)">
-                  <b>{{ $t(kind === "kb" ? "kb.sources" : kind === "file" ? "web.files" : "web.sources") }}</b>
-                  <template v-for="s in m.sources.filter((s) => s.kind === kind)" :key="s.n">
-                    <button class="src" :aria-expanded="openSource === `${m.id}:${s.n}`" @click="toggleSource(m.id, s.n)">
-                      <span class="cite" :class="{ on: openSource === `${m.id}:${s.n}` }">{{ s.n }}</span>
-                      <span v-if="s.kind === 'kb'">{{ s.document }} · {{ [locText(s.locator), s.folder].filter(Boolean).join(" · ") }}</span>
-                      <span v-else-if="s.kind === 'file'">{{ s.document }}</span>
-                      <span v-else>{{ s.title || s.url }}</span>
-                    </button>
-                    <blockquote v-if="openSource === `${m.id}:${s.n}`">{{ s.text }}<template v-if="s.kind === 'web'"><br /><a :href="s.url" target="_blank" rel="noopener noreferrer">{{ s.url }}</a></template></blockquote>
-                  </template>
-                </template>
-              </template>
-            </div>
-            <div v-if="webNote && m.id === messages[messages.length - 1]?.id" class="muted" style="margin-top: 6px">{{ $t(webNote) }}</div>
-            <div v-if="m.status === 'error'" class="alert err">{{ errorCodeText(m.error_code ?? "http") }}</div>
-            <div class="foot">
-              <span v-if="m.status === 'stopped'" class="tag warn">{{ $t("chat.stopped") }}</span>
-              <span v-if="m.cloud" class="tag info">{{ $t("web.cloudTag", { model: m.model }) }}</span>
-              <button v-if="m.content" class="btn ghost sm" @click="copy(m)"><Icon name="copy" />{{ copied === m.id ? $t("common.copied") : $t("common.copy") }}</button>
-            </div>
-          </div>
+          <div v-else class="msg bot"><ReplyBody :message="m" :web-note="m.id === messages[messages.length - 1]?.id ? webNote : ''" /></div>
         </template>
         <div v-if="busy" class="msg bot" aria-live="polite">
           <div v-if="live.fallback" class="alert info" style="margin-bottom: 6px">{{ $t("web.fallback", { model: live.fallback }) }}</div>
-          <details v-if="live.reasoning" open><summary>{{ $t("chat.thinking") }}</summary><div>{{ live.reasoning }}</div></details>
-          <div v-if="live.content" class="md" v-html="linkCitations(renderMarkdown(live.content), live.sources.length)" />
-          <span class="caret" :title="$t('chat.generating')" />
+          <ReplyBody live :message="{ content: live.content, reasoning: live.reasoning, sources: live.sources, status: 'ok', error_code: null, cloud: false, model: null }" />
         </div>
       </div>
 
@@ -349,5 +302,5 @@ async function copy(m: Message) {
       <div class="tip">{{ $t("web.uploadHint") }}</div>
     </div>
   </div>
-  <AgentConfig v-if="configuring && agent" :agent="agent" @close="configuring = false" @saved="saved" @deleted="router.replace('/agents')" />
+  <AgentConfig v-if="configuring && agent" :agent="agent" @close="configuring = false" @saved="saved" @updated="agent = $event" @deleted="router.replace('/agents')" />
 </template>

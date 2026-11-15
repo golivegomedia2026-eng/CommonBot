@@ -302,6 +302,8 @@ async fn run_tests(
             return;
         }
 
+        // 按下标逐题处理：每题答完要改它的结果，又要把它发给界面
+        #[allow(clippy::needless_range_loop)]
         for i in 0..tests.len() {
             // 用草稿临时构造出这个智能体，按它的知识范围和联网设置来答
             let agent = Agent::draft("draft", validated.clone());

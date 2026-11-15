@@ -6,9 +6,42 @@ import { type Agent, type AgentInput, api } from "../api";
 import { errorText } from "../i18n";
 import { loadFolders, loadProviders, modelOptions, state } from "../state";
 import FolderPicker from "./FolderPicker.vue";
+import PublishInfo from "./PublishInfo.vue";
 
-const props = defineProps<{ agent: Agent | null }>();
-const emit = defineEmits<{ close: []; saved: [Agent]; deleted: [] }>();
+const props = defineProps<{
+  agent: Agent | null;
+  /** 编辑的是建造师的草稿：保存时把内容交回，不直接写入智能体。 */
+  draftMode?: boolean;
+}>();
+// saved：保存了定义（抽屉可以关了）；updated：只是发布状态变了（抽屉留着，好让人看到链接）
+const emit = defineEmits<{ close: []; saved: [Agent]; updated: [Agent]; deleted: []; draft: [AgentInput] }>();
+const pub = ref<Agent | null>(props.agent && !props.draftMode ? props.agent : null);
+const unpubConfirm = ref(false);
+async function setPublished(on: boolean) {
+  if (!pub.value) return;
+  if (!on && !unpubConfirm.value) {
+    unpubConfirm.value = true;
+    setTimeout(() => (unpubConfirm.value = false), 4000);
+    return;
+  }
+  unpubConfirm.value = false;
+  error.value = "";
+  try {
+    pub.value = on ? await api.publishAgent(pub.value.id) : await api.unpublishAgent(pub.value.id);
+    emit("updated", pub.value);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
+async function rotate() {
+  if (!pub.value) return;
+  try {
+    pub.value = await api.rotateAgentKey(pub.value.id);
+    emit("updated", pub.value);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
 
 const a = props.agent;
 const form = reactive({
@@ -78,10 +111,12 @@ watch(
 );
 
 async function save() {
+  if (props.draftMode) return emit("draft", input());
   saving.value = true;
   error.value = "";
   try {
-    emit("saved", a ? await api.updateAgent(a.id, input()) : await api.createAgent(input()));
+    const result = a ? await api.updateAgent(a.id, input()) : await api.createAgent(input());
+    emit("saved", result);
   } catch (e) {
     error.value = errorText(e);
   } finally {
@@ -109,7 +144,7 @@ async function remove() {
   <div class="mask" @click="emit('close')" />
   <form class="drawer form" @submit.prevent="save" @keydown.esc="emit('close')">
     <div class="hd2">
-      <h2 class="grow">{{ a ? $t("agents.configTitle", { name: a.name }) : $t("agents.createTitle") }}</h2>
+      <h2 class="grow">{{ draftMode ? $t("builder.editTitle") : a ? $t("agents.configTitle", { name: a.name }) : $t("agents.createTitle") }}</h2>
       <button type="button" class="btn ghost sm" @click="emit('close')">{{ $t("common.cancel") }}</button>
       <button type="submit" class="btn primary sm" :disabled="saving || !form.name.trim()">{{ $t("common.save") }}</button>
     </div>
@@ -150,7 +185,17 @@ async function remove() {
       <pre>{{ prompt }}</pre>
       <p class="muted" style="margin-top: 6px">{{ $t("agents.promptHint") }}</p>
     </details>
-    <div v-if="a" class="row" style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line)">
+    <div v-if="pub" class="field" style="padding-top: 12px; border-top: 1px solid var(--line)">
+      <div class="row"><h2 class="grow">{{ $t("pub.title") }}</h2>
+        <button v-if="!pub.public_token" type="button" class="btn primary sm" :disabled="!pub.model" @click="setPublished(true)">{{ $t("pub.publish") }}</button>
+        <button v-else type="button" class="btn sm" :class="unpubConfirm ? 'danger' : 'ghost'" @click="setPublished(false)">{{ unpubConfirm ? $t("pub.unpublishConfirm") : $t("pub.unpublish") }}</button>
+      </div>
+      <template v-if="pub.public_token">
+        <PublishInfo :agent="pub"><template #key-actions><button type="button" class="btn ghost sm" @click="rotate">{{ $t("pub.rotate") }}</button></template></PublishInfo>
+      </template>
+      <span v-else>{{ pub.model ? $t("pub.off") : $t("pub.needModel") }}</span>
+    </div>
+    <div v-if="a && !draftMode" class="row" style="margin-top: auto; padding-top: 10px; border-top: 1px solid var(--line)">
       <button type="button" class="btn sm" :class="confirming ? 'danger' : 'ghost'" @click="remove">{{ confirming ? $t("agents.deleteConfirm") : $t("agents.delete") }}</button>
     </div>
   </form>
