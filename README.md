@@ -71,6 +71,14 @@ cargo run -p commonbot-mock-llm
 
 ## 检查
 
+浏览器回归（用假模型把主要流程在真实浏览器里走一遍）：
+
+```bash
+scripts/e2e/run.sh
+```
+
+单元与接口测试：
+
 ```bash
 pnpm --dir web test
 ```

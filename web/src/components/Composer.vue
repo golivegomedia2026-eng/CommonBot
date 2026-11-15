@@ -71,8 +71,19 @@ function setMode(m: string) {
 function closePop(e: Event) {
   if (!(e.target as HTMLElement).closest(".pw")) popOpen.value = false;
 }
-watch(popOpen, (open) => (open ? document.addEventListener("click", closePop) : document.removeEventListener("click", closePop)));
-onBeforeUnmount(() => document.removeEventListener("click", closePop));
+function closeOnEsc(e: KeyboardEvent) {
+  if (e.key === "Escape") popOpen.value = false;
+}
+// 浮层打开时：点别处或按 Esc 关闭
+watch(popOpen, (open) => {
+  const toggle = open ? document.addEventListener : document.removeEventListener;
+  toggle.call(document, "click", closePop);
+  toggle.call(document, "keydown", closeOnEsc as EventListener);
+});
+onBeforeUnmount(() => {
+  document.removeEventListener("click", closePop);
+  document.removeEventListener("keydown", closeOnEsc as EventListener);
+});
 
 const box = ref<HTMLTextAreaElement>();
 const options = computed(modelOptions);
