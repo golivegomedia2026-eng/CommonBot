@@ -1,0 +1,4 @@
+# 固定工具链版本：本地、CI、发行用同一个编译器和同一套检查规则。升级时改这里并单独验证。
+[toolchain]
+channel = "1.97.0"
+components = ["rustfmt", "clippy"]

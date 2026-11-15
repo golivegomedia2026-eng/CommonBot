@@ -392,7 +392,7 @@ pub fn vector_to_blob(v: &[f32]) -> Vec<u8> {
 }
 
 pub fn blob_to_vector(b: &[u8]) -> Vec<f32> {
-    b.chunks_exact(4).map(|x| f32::from_le_bytes([x[0], x[1], x[2], x[3]])).collect()
+    b.as_chunks::<4>().0.iter().map(|x| f32::from_le_bytes(*x)).collect()
 }
 
 pub fn set_vectors(c: &mut Connection, vectors: &[(i64, Vec<f32>)]) -> Result<()> {
