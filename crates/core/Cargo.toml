@@ -7,7 +7,15 @@ license.workspace = true
 publish.workspace = true
 
 [dependencies]
+base64 = "0.23.1"
+calamine = "0.38.0"
+chardetng = "1.0.0"
+encoding_rs = "0.8.44"
 futures.workspace = true
+html2text = "0.17.4"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "webp"] }
+pdfium-render = "0.9"
+quick-xml = "0.42.0"
 rand = "0.8"
 reqwest.workspace = true
 rusqlite = { version = "0.32", features = ["bundled"] }
@@ -17,6 +25,8 @@ sha2 = "0.10"
 thiserror.workspace = true
 tokio.workspace = true
 uuid.workspace = true
+zip = { version = "9", default-features = false, features = ["deflate"] }
 
 [dev-dependencies]
+image = { version = "0.25", default-features = false, features = ["png"] }
 tempfile = "3"

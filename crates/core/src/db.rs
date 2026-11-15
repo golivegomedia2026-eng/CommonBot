@@ -69,6 +69,57 @@ VALUES ('general', '通用助手', '什么都可以问，没有限定范围。',
 ALTER TABLE conversations ADD COLUMN agent_id TEXT NOT NULL DEFAULT 'general';
 CREATE INDEX conversations_by_agent ON conversations(agent_id, updated_at);
 "#,
+    r#"
+-- 知识库：文件夹（可多级）→ 文档 → 片段
+CREATE TABLE folders (
+    id         TEXT PRIMARY KEY,
+    parent_id  TEXT REFERENCES folders(id) ON DELETE CASCADE,
+    name       TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+);
+CREATE TABLE documents (
+    id           TEXT PRIMARY KEY,
+    folder_id    TEXT NOT NULL REFERENCES folders(id) ON DELETE CASCADE,
+    name         TEXT NOT NULL,
+    ext          TEXT NOT NULL,
+    size         INTEGER NOT NULL,
+    -- queued / parsing / ocr / embedding / ready / failed / paused
+    status       TEXT NOT NULL DEFAULT 'queued',
+    -- 只需要重新向量化时为 'embed'，否则从头处理
+    resume_from  TEXT NOT NULL DEFAULT 'parse',
+    done         INTEGER NOT NULL DEFAULT 0,
+    total        INTEGER NOT NULL DEFAULT 0,
+    error_code   TEXT,
+    error_detail TEXT,
+    pages        INTEGER,
+    chunks       INTEGER NOT NULL DEFAULT 0,
+    ocr_pages    INTEGER NOT NULL DEFAULT 0,
+    ocr_skipped  INTEGER NOT NULL DEFAULT 0,
+    embed_model  TEXT,
+    created_at   INTEGER NOT NULL,
+    updated_at   INTEGER NOT NULL
+);
+CREATE INDEX documents_by_folder ON documents(folder_id, created_at);
+CREATE INDEX documents_by_status ON documents(status, created_at);
+CREATE TABLE chunks (
+    id          INTEGER PRIMARY KEY,
+    document_id TEXT NOT NULL REFERENCES documents(id) ON DELETE CASCADE,
+    seq         INTEGER NOT NULL,
+    locator     TEXT NOT NULL,
+    text        TEXT NOT NULL,
+    vector      BLOB
+);
+CREATE INDEX chunks_by_document ON chunks(document_id, seq);
+-- 全文索引只存词，不重复存原文；rowid 即片段编号
+CREATE VIRTUAL TABLE chunks_fts USING fts5(tokens, content='', contentless_delete=1);
+CREATE TRIGGER chunks_fts_cleanup AFTER DELETE ON chunks BEGIN
+    DELETE FROM chunks_fts WHERE rowid = old.id;
+END;
+-- 智能体默认查哪些文件夹；对话可临时改范围（NULL 表示按智能体的默认）；回答引用的出处
+ALTER TABLE agents ADD COLUMN folders TEXT NOT NULL DEFAULT '[]';
+ALTER TABLE conversations ADD COLUMN scope TEXT;
+ALTER TABLE messages ADD COLUMN sources TEXT NOT NULL DEFAULT '[]';
+"#,
 ];
 
 impl Db {

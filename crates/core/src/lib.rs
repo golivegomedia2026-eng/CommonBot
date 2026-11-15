@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod db;
 pub mod error;
+pub mod kb;
 pub mod llm;
 pub mod store;
 

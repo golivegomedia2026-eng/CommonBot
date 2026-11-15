@@ -27,6 +27,8 @@ pub struct Agent {
     /// 固定使用的推理服务和模型；都为空表示用对话时选的。
     pub provider_id: Option<String>,
     pub model: Option<String>,
+    /// 默认查哪些知识库文件夹（含子文件夹）。空表示不查知识库。
+    pub folders: Vec<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -52,6 +54,7 @@ pub struct AgentInput {
     pub examples: Vec<String>,
     pub provider_id: Option<String>,
     pub model: Option<String>,
+    pub folders: Vec<String>,
 }
 
 const MAX_EXAMPLES: usize = 6;
@@ -97,6 +100,12 @@ impl AgentInput {
             examples,
             provider_id,
             model,
+            folders: {
+                if self.folders.len() > 50 {
+                    return Err(Error::Invalid("folders".into()));
+                }
+                self.folders
+            },
         })
     }
 }
@@ -158,6 +167,7 @@ fn from_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
         examples: serde_json::from_str(&examples).unwrap_or_default(),
         provider_id: r.get("provider_id")?,
         model: r.get("model")?,
+        folders: serde_json::from_str(&r.get::<_, String>("folders")?).unwrap_or_default(),
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -183,13 +193,17 @@ pub fn get(c: &Connection, id: &str) -> Result<Agent> {
     c.query_row("SELECT * FROM agents WHERE id = ?1", [id], from_row).optional()?.ok_or(Error::NotFound("agent"))
 }
 
+fn json(list: &[String]) -> String {
+    serde_json::to_string(list).unwrap_or_else(|_| "[]".into())
+}
+
 pub fn create(c: &Connection, input: AgentInput) -> Result<Agent> {
     let i = input.validated()?;
     let (id, now) = (new_id(), now_ms());
     c.execute(
-        "INSERT INTO agents(id, name, description, duty, out_of_scope, instructions, opening, examples, provider_id, model, created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?11)",
-        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, serde_json::to_string(&i.examples).unwrap_or_else(|_| "[]".into()), i.provider_id, i.model, now],
+        "INSERT INTO agents(id, name, description, duty, out_of_scope, instructions, opening, examples, provider_id, model, folders, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?12)",
+        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), now],
     )?;
     get(c, &id)
 }
@@ -197,8 +211,8 @@ pub fn create(c: &Connection, input: AgentInput) -> Result<Agent> {
 pub fn update(c: &Connection, id: &str, input: AgentInput) -> Result<Agent> {
     let i = input.validated()?;
     let changed = c.execute(
-        "UPDATE agents SET name = ?2, description = ?3, duty = ?4, out_of_scope = ?5, instructions = ?6, opening = ?7, examples = ?8, provider_id = ?9, model = ?10, updated_at = ?11 WHERE id = ?1",
-        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, serde_json::to_string(&i.examples).unwrap_or_else(|_| "[]".into()), i.provider_id, i.model, now_ms()],
+        "UPDATE agents SET name = ?2, description = ?3, duty = ?4, out_of_scope = ?5, instructions = ?6, opening = ?7, examples = ?8, provider_id = ?9, model = ?10, folders = ?11, updated_at = ?12 WHERE id = ?1",
+        params![id, i.name, i.description, i.duty, i.out_of_scope, i.instructions, i.opening, json(&i.examples), i.provider_id, i.model, json(&i.folders), now_ms()],
     )?;
     if changed == 0 {
         return Err(Error::NotFound("agent"));

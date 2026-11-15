@@ -140,6 +140,94 @@ impl LlmClient {
     }
 }
 
+/// 去掉部分模型写在正文里的思考段落。
+fn strip_think(text: &str) -> String {
+    let mut out = String::new();
+    let mut rest = text;
+    while let Some(start) = rest.find("<think>") {
+        out.push_str(&rest[..start]);
+        match rest[start..].find("</think>") {
+            Some(end) => rest = &rest[start + end + "</think>".len()..],
+            None => return out.trim().to_string(),
+        }
+    }
+    out.push_str(rest);
+    out.trim().to_string()
+}
+
+impl LlmClient {
+    /// 把一批文字变成向量。返回的向量已归一化，可以直接用点积比较。
+    pub async fn embed(&self, ep: &Endpoint, model: &str, inputs: &[String]) -> Result<Vec<Vec<f32>>> {
+        let body = serde_json::json!({ "model": model, "input": inputs });
+        let resp = self
+            .request(reqwest::Method::POST, ep, "/embeddings")
+            .timeout(Duration::from_secs(180))
+            .json(&body)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        let resp = check_status(resp).await?;
+        let body: Value = resp.json().await.map_err(|e| Error::Upstream { status: 200, message: e.to_string() })?;
+        let mut items: Vec<(u64, Vec<f32>)> = body["data"]
+            .as_array()
+            .map(|a| {
+                a.iter()
+                    .enumerate()
+                    .map(|(i, d)| {
+                        let v = d["embedding"]
+                            .as_array()
+                            .map(|e| e.iter().filter_map(|x| x.as_f64().map(|f| f as f32)).collect())
+                            .unwrap_or_default();
+                        (d["index"].as_u64().unwrap_or(i as u64), v)
+                    })
+                    .collect()
+            })
+            .unwrap_or_default();
+        items.sort_by_key(|(i, _)| *i);
+        let dim = items.first().map(|(_, v)| v.len()).unwrap_or(0);
+        if items.len() != inputs.len() || dim == 0 || items.iter().any(|(_, v)| v.len() != dim) {
+            return Err(Error::Upstream { status: 200, message: "unexpected embeddings response".into() });
+        }
+        Ok(items.into_iter().map(|(_, v)| normalize(v)).collect())
+    }
+
+    /// 让看图模型把图片里的文字转写出来（用于扫描件）。
+    pub async fn ocr_image(&self, ep: &Endpoint, model: &str, png: &[u8]) -> Result<String> {
+        use base64::Engine as _;
+        let data = base64::engine::general_purpose::STANDARD.encode(png);
+        let body = serde_json::json!({
+            "model": model,
+            "stream": false,
+            "temperature": 0,
+            "messages": [{ "role": "user", "content": [
+                { "type": "text", "text": OCR_PROMPT },
+                { "type": "image_url", "image_url": { "url": format!("data:image/png;base64,{data}") } },
+            ]}],
+        });
+        let resp = self
+            .request(reqwest::Method::POST, ep, "/chat/completions")
+            .timeout(Duration::from_secs(600))
+            .json(&body)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        let resp = check_status(resp).await?;
+        let body: Value = resp.json().await.map_err(|e| Error::Upstream { status: 200, message: e.to_string() })?;
+        let text = body["choices"][0]["message"]["content"].as_str().unwrap_or("");
+        Ok(strip_think(text))
+    }
+}
+
+const OCR_PROMPT: &str = "把这张图片里的全部文字按阅读顺序原样转写出来。表格按行输出，单元格之间用 | 分隔。只输出图片里的文字本身，不要解释、不要总结、不要补充图片里没有的内容。图片里没有文字时输出空。";
+
+pub fn normalize(mut v: Vec<f32>) -> Vec<f32> {
+    let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
+    if norm > 0.0 {
+        v.iter_mut().for_each(|x| *x /= norm);
+    }
+    v
+}
+
 fn unreachable(e: reqwest::Error) -> Error {
     Error::Unreachable(e.to_string())
 }
@@ -270,6 +358,15 @@ mod tests {
         let mut p = SseParser::default();
         let err = p.feed(b"data: {\"error\":{\"message\":\"out of memory\"}}\n").unwrap_err();
         assert!(matches!(err, Error::Upstream { message, .. } if message == "out of memory"));
+    }
+
+    #[test]
+    fn strips_inline_thinking_and_normalizes() {
+        assert_eq!(strip_think("<think>嗯</think>\n正文<think>再想</think>结尾"), "正文结尾");
+        assert_eq!(strip_think("<think>没写完"), "");
+        let v = normalize(vec![3.0, 4.0]);
+        assert!((v[0] - 0.6).abs() < 1e-6 && (v[1] - 0.8).abs() < 1e-6);
+        assert_eq!(normalize(vec![0.0, 0.0]), vec![0.0, 0.0]);
     }
 
     #[test]

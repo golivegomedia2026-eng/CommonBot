@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use clap::Parser;
+use commonbot_core::kb::ingest::find_pdfium;
 use commonbot_core::{store, Db};
 use commonbot_server::{app, AppState, VERSION};
 
@@ -29,7 +30,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         None => dirs::data_dir().ok_or("cannot determine the data directory; pass --data-dir")?.join("CommonBot"),
     };
     let db = Db::open(&data_dir.join("commonbot.db"))?;
-    let state = AppState::new(db.clone(), args.listen).await?;
+    // PDF 解析库：发行包里在程序旁边；从源码运行时在 vendor/ 下（scripts/fetch-vendor.sh）
+    let vendor: Vec<PathBuf> = std::fs::read_dir("vendor/pdfium")
+        .map(|d| d.flatten().flat_map(|e| [e.path().join("lib"), e.path().join("bin")]).collect())
+        .unwrap_or_default();
+    let pdfium = find_pdfium(&vendor.iter().map(PathBuf::as_path).collect::<Vec<_>>());
+    let state = AppState::new(db.clone(), args.listen, data_dir.clone(), pdfium.clone()).await?;
 
     let listener = tokio::net::TcpListener::bind(args.listen)
         .await
@@ -38,6 +44,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("CommonBot {VERSION}");
     println!("  data:  {}", data_dir.display());
     println!("  open:  http://localhost:{}", addr.port());
+    if pdfium.is_none() {
+        println!("  note:  PDF engine not found — PDF files cannot be added to the knowledge base");
+    }
     if !addr.ip().is_loopback() {
         let code = db.run(|c| store::access_code(c)).await?;
         println!("  other devices: http://<this machine's address>:{}  access code: {code}", addr.port());
