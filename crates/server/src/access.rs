@@ -66,7 +66,7 @@ fn is_loopback_host(authority: &str) -> bool {
     matches!(host_name(authority).to_ascii_lowercase().as_str(), "localhost" | "127.0.0.1" | "[::1]")
 }
 
-fn header_str<'a>(headers: &'a HeaderMap, name: header::HeaderName) -> Option<&'a str> {
+fn header_str(headers: &HeaderMap, name: header::HeaderName) -> Option<&str> {
     headers.get(name).and_then(|v| v.to_str().ok())
 }
 

@@ -1,0 +1,13 @@
+import { createRouter, createWebHistory } from "vue-router";
+
+export const router = createRouter({
+  history: createWebHistory(),
+  routes: [
+    { path: "/", redirect: "/chat" },
+    { path: "/chat/:id?", name: "chat", component: () => import("./pages/ChatPage.vue") },
+    { path: "/settings/models", name: "models", component: () => import("./pages/ModelsPage.vue") },
+    { path: "/settings/system", name: "system", component: () => import("./pages/SystemPage.vue") },
+    { path: "/access", name: "access", component: () => import("./pages/AccessPage.vue"), meta: { bare: true } },
+    { path: "/:rest(.*)*", redirect: "/chat" },
+  ],
+});

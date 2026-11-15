@@ -1,0 +1,135 @@
+<script setup lang="ts">
+import { onMounted, reactive, ref } from "vue";
+
+import { api, type Provider, type ProviderInput } from "../api";
+import Icon from "../components/Icon.vue";
+import { errorText } from "../i18n";
+import { checkProvider, loadProviders, state } from "../state";
+
+const error = ref("");
+const formError = ref("");
+const saving = ref(false);
+const confirming = ref("");
+/** null：没在编辑；""：新增；其他：正在编辑的服务 */
+const editing = ref<string | null>(null);
+const form = reactive({ name: "", kind: "local" as "local" | "cloud", base_url: "", api_key: "", clear_key: false, default_model: "", has_key: false });
+
+onMounted(() => loadProviders().catch((e) => (error.value = errorText(e))));
+
+function startAdd() {
+  Object.assign(form, { name: "", kind: "local", base_url: "http://127.0.0.1:11434/v1", api_key: "", clear_key: false, default_model: "", has_key: false });
+  formError.value = "";
+  editing.value = "";
+}
+function startEdit(p: Provider) {
+  Object.assign(form, { name: p.name, kind: p.kind, base_url: p.base_url, api_key: "", clear_key: false, default_model: p.default_model ?? "", has_key: p.has_key });
+  formError.value = "";
+  editing.value = p.id;
+}
+
+async function save() {
+  if (editing.value === null) return;
+  saving.value = true;
+  formError.value = "";
+  const input: ProviderInput = { name: form.name, kind: form.kind, base_url: form.base_url, default_model: form.default_model || null };
+  if (form.clear_key) input.api_key = "";
+  else if (form.api_key) input.api_key = form.api_key;
+  try {
+    const saved = editing.value ? await api.updateProvider(editing.value, input) : await api.createProvider(input);
+    editing.value = null;
+    await loadProviders(false);
+    await checkProvider(saved.id);
+  } catch (e) {
+    formError.value = errorText(e);
+  } finally {
+    saving.value = false;
+  }
+}
+
+async function remove(id: string) {
+  if (confirming.value !== id) {
+    confirming.value = id;
+    setTimeout(() => confirming.value === id && (confirming.value = ""), 3000);
+    return;
+  }
+  confirming.value = "";
+  try {
+    await api.deleteProvider(id);
+    await loadProviders(false);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
+</script>
+
+<template>
+  <header class="page-head">
+    <div class="grow">
+      <div class="eyebrow">{{ $t("nav.settings") }}</div>
+      <h1>{{ $t("models.title") }}</h1>
+    </div>
+    <button class="btn primary" @click="startAdd"><Icon name="plus" />{{ $t("models.add") }}</button>
+  </header>
+  <p class="muted">{{ $t("models.subtitle") }}</p>
+  <div v-if="error" class="alert err" role="alert">{{ error }}</div>
+
+  <div v-if="state.providersLoaded && !state.providers.length" class="card muted">{{ $t("models.emptyList") }}</div>
+  <div v-for="p in state.providers" :key="p.id" class="card">
+    <div class="row">
+      <h2>{{ p.name }}</h2>
+      <span class="tag" :class="{ info: p.kind === 'cloud' }">{{ $t(`models.${p.kind}`) }}</span>
+      <span v-if="p.has_key" class="tag">{{ $t("models.hasKey") }}</span>
+      <span class="grow" />
+      <button class="btn ghost sm" :disabled="state.checks[p.id]?.state === 'checking'" @click="checkProvider(p.id)">{{ $t("models.check") }}</button>
+      <button class="btn ghost sm" @click="startEdit(p)">{{ $t("common.edit") }}</button>
+      <button class="btn sm" :class="confirming === p.id ? 'danger' : 'ghost'" @click="remove(p.id)">{{ confirming === p.id ? $t("common.confirmDelete") : $t("common.delete") }}</button>
+    </div>
+    <div class="kv" style="margin: 10px 0"><span>{{ p.base_url }}</span></div>
+    <div class="row" aria-live="polite">
+      <template v-if="state.checks[p.id]?.state === 'ok'">
+        <span v-if="state.checks[p.id].models.length" class="tag ok">✓ {{ $t("models.ok", { n: state.checks[p.id].models.length, ms: state.checks[p.id].latency }) }}</span>
+        <span v-else class="tag warn">! {{ $t("models.okNoModels") }}</span>
+        <span v-if="p.default_model" class="muted">{{ $t("models.defaultModel") }}：{{ p.default_model }}</span>
+      </template>
+      <span v-else-if="state.checks[p.id]?.state === 'error'" class="tag err">× {{ state.checks[p.id].error }}</span>
+      <span v-else-if="state.checks[p.id]?.state === 'checking'" class="tag">{{ $t("models.checking") }}</span>
+      <span v-else class="tag">{{ $t("models.notChecked") }}</span>
+    </div>
+  </div>
+
+  <template v-if="editing !== null">
+    <div class="mask" @click="editing = null" />
+    <form class="drawer form" @submit.prevent="save">
+      <div class="hd2">
+        <h2 class="grow">{{ editing ? $t("models.editTitle") : $t("models.addTitle") }}</h2>
+        <button type="button" class="btn ghost sm" @click="editing = null">{{ $t("common.cancel") }}</button>
+        <button type="submit" class="btn primary sm" :disabled="saving">{{ $t("common.save") }}</button>
+      </div>
+      <div v-if="formError" class="alert err" role="alert">{{ formError }}</div>
+      <label class="field"><span>{{ $t("models.name") }}</span><input v-model="form.name" type="text" required maxlength="60" /></label>
+      <div class="field">
+        <span>{{ $t("models.kind") }}</span>
+        <div class="seg">
+          <button type="button" :aria-pressed="form.kind === 'local'" @click="form.kind = 'local'">{{ $t("models.local") }}</button>
+          <button type="button" :aria-pressed="form.kind === 'cloud'" @click="form.kind = 'cloud'">{{ $t("models.cloud") }}</button>
+        </div>
+      </div>
+      <label class="field"><span>{{ $t("models.baseUrl") }}</span><input v-model="form.base_url" type="text" required spellcheck="false" autocapitalize="off" /><span>{{ $t("models.baseUrlHint") }}</span></label>
+      <label class="field">
+        <span>{{ $t("models.apiKey") }}</span>
+        <input v-model="form.api_key" type="password" autocomplete="off" :disabled="form.clear_key" :placeholder="form.has_key ? $t('models.apiKeyKeep') : $t('models.apiKeyNone')" />
+      </label>
+      <label v-if="form.has_key" class="row"><input v-model="form.clear_key" type="checkbox" />{{ $t("models.clearKey") }}</label>
+      <label class="field">
+        <span>{{ $t("models.defaultModel") }}</span>
+        <select v-if="editing && state.checks[editing]?.models.length" v-model="form.default_model">
+          <option value="">{{ $t("models.none") }}</option>
+          <option v-if="form.default_model && !state.checks[editing].models.includes(form.default_model)" :value="form.default_model">{{ form.default_model }}</option>
+          <option v-for="m in state.checks[editing].models" :key="m" :value="m">{{ m }}</option>
+        </select>
+        <input v-else v-model="form.default_model" type="text" spellcheck="false" autocapitalize="off" />
+        <span>{{ $t("models.defaultModelHint") }}</span>
+      </label>
+    </form>
+  </template>
+</template>
