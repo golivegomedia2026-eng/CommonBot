@@ -5,7 +5,7 @@ import { computed, nextTick, ref, watch } from "vue";
 import { modelOptions, select, state } from "../state";
 import Icon from "./Icon.vue";
 
-const props = defineProps<{ modelValue: string; busy: boolean; placeholder: string }>();
+const props = defineProps<{ modelValue: string; busy: boolean; placeholder: string; lockedModel?: string | null }>();
 const emit = defineEmits<{ "update:modelValue": [string]; send: []; stop: [] }>();
 
 const box = ref<HTMLTextAreaElement>();
@@ -17,7 +17,7 @@ const picked = computed({
     select(providerId, model);
   },
 });
-const canSend = computed(() => !props.busy && props.modelValue.trim() !== "" && state.selection.model !== "");
+const canSend = computed(() => !props.busy && props.modelValue.trim() !== "" && (!!props.lockedModel || state.selection.model !== ""));
 
 function resize() {
   const el = box.value;
@@ -48,7 +48,8 @@ defineExpose({ focus: () => box.value?.focus() });
       @keydown="onKey"
     />
     <div class="tools">
-      <label v-if="options.length" class="chip" :title="$t('chat.pickModel')">
+      <span v-if="lockedModel" class="chip" style="cursor: default" :title="$t('agents.lockedModel')"><Icon name="chip" />{{ lockedModel }}</span>
+      <label v-else-if="options.length" class="chip" :title="$t('chat.pickModel')">
         <Icon name="chip" />
         <select v-model="picked" :aria-label="$t('chat.pickModel')">
           <option v-for="o in options" :key="`${o.providerId}\n${o.model}`" :value="`${o.providerId}\n${o.model}`">{{ o.label }}</option>

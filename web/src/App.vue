@@ -34,7 +34,7 @@ onMounted(boot);
     <nav class="side" :aria-label="$t('nav.workbench')">
       <div class="brand"><span class="logo">智</span><b>CommonBot</b></div>
       <span class="group">{{ $t("nav.workbench") }}</span>
-      <RouterLink class="link" :class="{ on: route.name === 'chat' }" to="/chat">{{ $t("nav.chat") }}</RouterLink>
+      <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
       <span class="group">{{ $t("nav.settings") }}</span>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>
@@ -46,7 +46,7 @@ onMounted(boot);
     </nav>
     <main><RouterView /></main>
     <nav class="tabbar" :aria-label="$t('nav.workbench')">
-      <RouterLink class="link" :class="{ on: route.name === 'chat' }" to="/chat">{{ $t("nav.chat") }}</RouterLink>
+      <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>
     </nav>

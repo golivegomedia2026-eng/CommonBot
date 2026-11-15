@@ -16,8 +16,29 @@ export interface ProviderInput {
   api_key?: string;
   default_model?: string | null;
 }
+export interface Agent {
+  id: string;
+  name: string;
+  description: string;
+  duty: string;
+  out_of_scope: string;
+  instructions: string;
+  opening: string;
+  examples: string[];
+  provider_id: string | null;
+  model: string | null;
+  updated_at: number;
+  system_prompt?: string;
+}
+export interface AgentSummary extends Agent {
+  conversations: number;
+  last_used_at: number | null;
+}
+export type AgentInput = Pick<Agent, "name" | "description" | "duty" | "out_of_scope" | "instructions" | "opening" | "examples" | "provider_id" | "model">;
+
 export interface Conversation {
   id: string;
+  agent_id: string;
   title: string;
   provider_id: string | null;
   model: string | null;
@@ -98,8 +119,15 @@ export const api = {
   deleteProvider: (id: string) => call<void>("DELETE", `/providers/${id}`),
   checkProvider: (id: string) => call<{ models: string[]; latency_ms: number }>("POST", `/providers/${id}/check`),
 
-  conversations: () => call<Conversation[]>("GET", "/conversations"),
-  createConversation: () => call<Conversation>("POST", "/conversations"),
+  agents: () => call<AgentSummary[]>("GET", "/agents"),
+  agent: (id: string) => call<Agent>("GET", `/agents/${id}`),
+  createAgent: (input: AgentInput) => call<Agent>("POST", "/agents", input),
+  updateAgent: (id: string, input: AgentInput) => call<Agent>("PUT", `/agents/${id}`, input),
+  deleteAgent: (id: string) => call<void>("DELETE", `/agents/${id}`),
+  previewPrompt: (input: AgentInput, signal?: AbortSignal) => call<{ system_prompt: string }>("POST", "/agents/prompt-preview", input, signal),
+
+  conversations: (agentId: string) => call<Conversation[]>("GET", `/conversations?agent_id=${encodeURIComponent(agentId)}`),
+  createConversation: (agentId: string) => call<Conversation>("POST", "/conversations", { agent_id: agentId }),
   conversation: (id: string) => call<{ conversation: Conversation; messages: Message[] }>("GET", `/conversations/${id}`),
   renameConversation: (id: string, title: string) => call<Conversation>("PATCH", `/conversations/${id}`, { title }),
   deleteConversation: (id: string) => call<void>("DELETE", `/conversations/${id}`),
@@ -137,7 +165,7 @@ export function parseEvents(buffer: string): { events: StreamEvent[]; rest: stri
 /** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
 export async function sendMessage(
   conversationId: string,
-  body: { content: string; provider_id: string; model?: string },
+  body: { content: string; provider_id?: string; model?: string },
   onEvent: (e: StreamEvent) => void,
   signal: AbortSignal,
 ): Promise<void> {

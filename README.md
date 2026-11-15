@@ -2,7 +2,7 @@
 
 通用智能体平台：新建智能体并定义职责、为智能体建知识库（可结合联网回答）、通过对话生成新的智能体。主机为 NVIDIA DGX Spark，Rust 实现。
 
-当前阶段：**P0 骨架已完成**——服务能启动，浏览器里可以和模型流式对话；智能体、知识库、建造师在后续阶段。
+当前阶段：**P1 智能体已完成**——可以新建智能体、定义职责、各自对话；知识库、联网、建造师在后续阶段。
 
 - 方案：[docs/v1/PLAN.md](docs/v1/PLAN.md)
 - 决策：[docs/v1/DECISIONS.md](docs/v1/DECISIONS.md)
@@ -11,6 +11,8 @@
 
 ## 现在能做什么
 
+- 新建智能体：写清负责什么、不负责什么、开场白和示例问题，可固定使用某个模型；系统提示词由这些内容生成并可预览
+- 每个智能体有自己的对话记录
 - 连接本机的推理服务（默认 Ollama，也可以是 vLLM、llama.cpp 等任何 OpenAI 兼容接口），检测连通并列出模型
 - 流式对话，可中途停止，已生成的部分会保留；对话保存在本机，重启后还在
 - 添加云端模型作为后备；密钥只存在本机，不会回传给界面
@@ -63,15 +65,15 @@ pnpm --dir web test
 cargo test --workspace
 ```
 
-## 实际界面截图（P0）
+## 实际界面截图
 
-| 对话（宣纸） | 模型设置 |
+| 智能体列表 | 智能体对话 |
 | --- | --- |
-| ![对话](docs/screenshots/p0-chat.png) | ![模型](docs/screenshots/p0-models.png) |
+| ![列表](docs/screenshots/p1-agents.png) | ![对话](docs/screenshots/p1-agent-chat.png) |
 
-| 深色 + 英文 | 系统与外观 | 手机 |
+| 配置抽屉 | 模型设置 | 手机 |
 | --- | --- | --- |
-| ![深色](docs/screenshots/p0-chat-dark-en.png) | ![系统](docs/screenshots/p0-system.png) | ![手机](docs/screenshots/p0-chat-phone.png) |
+| ![配置](docs/screenshots/p1-agent-config.png) | ![模型](docs/screenshots/p0-models.png) | ![手机](docs/screenshots/p1-agent-chat-phone.png) |
 
 ## 效果图截图
 

@@ -2,7 +2,8 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { api, ApiError, type Conversation, type Message, sendMessage } from "../api";
+import { type Agent, api, ApiError, type Conversation, type Message, sendMessage } from "../api";
+import AgentConfig from "../components/AgentConfig.vue";
 import Composer from "../components/Composer.vue";
 import Icon from "../components/Icon.vue";
 import { errorCodeText, errorText } from "../i18n";
@@ -13,6 +14,8 @@ import { copyText, isToday } from "../util";
 const route = useRoute();
 const router = useRouter();
 
+const agent = ref<Agent | null>(null);
+const configuring = ref(false);
 const conversations = ref<Conversation[]>([]);
 const messages = ref<Message[]>([]);
 const draft = ref("");
@@ -28,13 +31,15 @@ let abort: AbortController | null = null;
 /** 刚由发送动作新建的对话，路由变化时不必重新读取。 */
 let justCreated = "";
 
+const agentId = computed(() => route.params.agentId as string);
+const base = computed(() => `/agents/${agentId.value}`);
 const currentId = computed(() => (route.params.id as string) || "");
 const current = computed(() => conversations.value.find((c) => c.id === currentId.value));
 const groups = computed(() => [
   { label: "chat.today", items: conversations.value.filter((c) => isToday(c.updated_at)) },
   { label: "chat.earlier", items: conversations.value.filter((c) => !isToday(c.updated_at)) },
 ]);
-const noModel = computed(() => state.providersLoaded && !state.selection.model && !Object.values(state.checks).some((c) => c.state === "checking"));
+const noModel = computed(() => !agent.value?.model && state.providersLoaded && !state.selection.model && !Object.values(state.checks).some((c) => c.state === "checking"));
 
 function toBottom(force = false) {
   const el = scroller.value;
@@ -44,7 +49,7 @@ function toBottom(force = false) {
 }
 
 async function loadList() {
-  conversations.value = await api.conversations();
+  conversations.value = await api.conversations(agentId.value);
 }
 
 async function open(id: string) {
@@ -57,7 +62,7 @@ async function open(id: string) {
     messages.value = (await api.conversation(id)).messages;
     toBottom(true);
   } catch (e) {
-    if (e instanceof ApiError && e.code === "not_found") return void router.replace("/chat");
+    if (e instanceof ApiError && e.code === "not_found") return void router.replace(base.value);
     error.value = errorText(e);
   }
 }
@@ -69,37 +74,45 @@ watch(currentId, (id) => {
   void open(id);
 });
 
-onMounted(async () => {
+async function loadAgent() {
+  agent.value = null;
+  conversations.value = [];
   try {
-    await Promise.all([loadList(), open(currentId.value), state.providersLoaded ? null : loadProviders()]);
+    const [a] = await Promise.all([api.agent(agentId.value), loadList(), open(currentId.value), state.providersLoaded ? null : loadProviders()]);
+    agent.value = a;
   } catch (e) {
+    if (e instanceof ApiError && e.code === "not_found") return void router.replace("/agents");
     error.value = errorText(e);
   }
   composer.value?.focus();
-});
+}
+watch(agentId, (id) => id && void loadAgent());
+onMounted(loadAgent);
 onBeforeUnmount(() => abort?.abort());
 
-async function send() {
-  const content = draft.value.trim();
+async function send(text?: string) {
+  const content = (text ?? draft.value).trim();
+  // 智能体固定了模型时由服务决定用哪个，这里不传
+  const fixed = !!agent.value?.model;
   const { providerId, model } = state.selection;
-  if (!content || busy.value || !model) return;
+  if (!content || busy.value || (!fixed && !model)) return;
   error.value = "";
   busy.value = true;
   let id = currentId.value;
   const pending: Message = { id: "pending", conversation_id: id, role: "user", content, reasoning: "", status: "ok", error_code: null, created_at: Date.now() };
   try {
     if (!id) {
-      id = (await api.createConversation()).id;
+      id = (await api.createConversation(agentId.value)).id;
       justCreated = id;
-      await router.replace(`/chat/${id}`);
+      await router.replace(`${base.value}/${id}`);
     }
     messages.value.push(pending);
-    draft.value = "";
+    if (text === undefined) draft.value = "";
     toBottom(true);
     abort = new AbortController();
     await sendMessage(
       id,
-      { content, provider_id: providerId, model },
+      fixed ? { content } : { content, provider_id: providerId, model },
       (e) => {
         if (e.type === "user") {
           const i = messages.value.findIndex((m) => m.id === "pending");
@@ -129,7 +142,7 @@ async function send() {
       const i = messages.value.findIndex((m) => m.id === "pending");
       if (i >= 0) {
         messages.value.splice(i, 1);
-        draft.value = content;
+        if (text === undefined) draft.value = content;
       }
       error.value = errorText(e);
     }
@@ -151,10 +164,15 @@ async function remove(id: string) {
   try {
     await api.deleteConversation(id);
     conversations.value = conversations.value.filter((c) => c.id !== id);
-    if (id === currentId.value) await router.replace("/chat");
+    if (id === currentId.value) await router.replace(base.value);
   } catch (e) {
     error.value = errorText(e);
   }
+}
+
+function saved(a: Agent) {
+  agent.value = a;
+  configuring.value = false;
 }
 
 async function copy(m: Message) {
@@ -169,10 +187,11 @@ async function copy(m: Message) {
   <header class="page-head">
     <button class="btn ghost sm icon-only only-narrow" :aria-label="$t('chat.title')" @click="histOpen = true"><Icon name="list" /></button>
     <div class="grow">
-      <div class="eyebrow">{{ $t("nav.workbench") }}</div>
-      <h1>{{ current?.title || $t("chat.title") }}</h1>
+      <div class="eyebrow"><RouterLink class="crumb" to="/agents">{{ $t("agents.all") }}</RouterLink></div>
+      <h1>{{ agent?.name ?? "\u00a0" }}</h1>
     </div>
-    <RouterLink class="btn primary" to="/chat"><Icon name="plus" />{{ $t("chat.newChat") }}</RouterLink>
+    <button class="btn ghost" :disabled="!agent" @click="configuring = true"><Icon name="gear" />{{ $t("agents.config") }}</button>
+    <RouterLink class="btn primary" :to="base"><Icon name="plus" />{{ $t("chat.newChat") }}</RouterLink>
   </header>
 
   <div class="chatpage">
@@ -180,7 +199,7 @@ async function copy(m: Message) {
     <div class="card hist" :class="{ open: histOpen }">
       <template v-for="g in groups" :key="g.label">
         <small v-if="g.items.length">{{ $t(g.label) }}</small>
-        <div v-for="c in g.items" :key="c.id" class="h" :class="{ on: c.id === currentId }" role="link" tabindex="0" @click="router.push(`/chat/${c.id}`)" @keydown.enter="router.push(`/chat/${c.id}`)">
+        <div v-for="c in g.items" :key="c.id" class="h" :class="{ on: c.id === currentId }" role="link" tabindex="0" @click="router.push(`${base}/${c.id}`)" @keydown.enter="router.push(`${base}/${c.id}`)">
           <span :title="c.title">{{ confirming === c.id ? $t("common.confirmDelete") : c.title || $t("chat.newChat") }}</span>
           <button class="x" :aria-label="$t('common.delete')" :title="$t('common.delete')" @click.stop="remove(c.id)"><Icon name="x" /></button>
         </div>
@@ -190,9 +209,10 @@ async function copy(m: Message) {
 
     <div class="card chat">
       <div ref="scroller" class="msgs">
-        <div v-if="!messages.length && !busy" class="empty">
-          <h2>{{ $t("chat.empty") }}</h2>
-          <p>{{ $t("chat.emptyHint") }}</p>
+        <div v-if="!messages.length && !busy && agent?.opening" class="msg bot" style="white-space: pre-wrap">{{ agent.opening }}</div>
+        <div v-else-if="!messages.length && !busy && agent" class="empty">
+          <h2>{{ agent.name }}</h2>
+          <p>{{ agent.description || $t("chat.emptyHint") }}</p>
         </div>
         <template v-for="m in messages" :key="m.id">
           <div v-if="m.role === 'user'" class="msg me">{{ m.content }}</div>
@@ -218,8 +238,12 @@ async function copy(m: Message) {
         <span class="grow"><b>{{ $t("chat.noModel") }}</b> · {{ $t("chat.noModelHint") }}</span>
         <RouterLink class="btn ghost sm" to="/settings/models">{{ $t("chat.goModels") }}</RouterLink>
       </div>
-      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" @send="send" @stop="abort?.abort()" />
+      <div v-if="agent?.examples.length && !busy && !messages.length" class="quick">
+        <button v-for="q in agent.examples" :key="q" class="chip" @click="send(q)">{{ q }}</button>
+      </div>
+      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" :locked-model="agent?.model" @send="send()" @stop="abort?.abort()" />
       <div class="tip">{{ $t("chat.tip") }}</div>
     </div>
   </div>
+  <AgentConfig v-if="configuring && agent" :agent="agent" @close="configuring = false" @saved="saved" @deleted="router.replace('/agents')" />
 </template>

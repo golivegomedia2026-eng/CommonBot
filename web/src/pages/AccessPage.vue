@@ -17,7 +17,7 @@ async function submit() {
   try {
     await api.enterAccessCode(code.value);
     state.health = await api.health();
-    await router.replace("/chat");
+    await router.replace("/agents");
   } catch (e) {
     error.value = errorText(e);
   } finally {
