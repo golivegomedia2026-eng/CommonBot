@@ -1,0 +1,88 @@
+//! 仅用于测试和截图的假推理后端：实现 OpenAI 兼容接口里用到的两个地址。
+//! 不随产品发布。
+
+use std::convert::Infallible;
+use std::time::Duration;
+
+use axum::extract::State;
+use axum::http::{HeaderMap, StatusCode};
+use axum::response::sse::{Event, Sse};
+use axum::response::{IntoResponse, Response};
+use axum::routing::{get, post};
+use axum::{Json, Router};
+use futures::Stream;
+use serde_json::{json, Value};
+use tokio_stream::StreamExt;
+
+#[derive(Clone, Default)]
+pub struct MockConfig {
+    /// 设置后要求请求带这个密钥。
+    pub api_key: Option<String>,
+    /// 每段之间的停顿，用来模拟模型出字的速度。
+    pub delay: Duration,
+}
+
+pub fn router(cfg: MockConfig) -> Router {
+    Router::new().route("/v1/models", get(models)).route("/v1/chat/completions", post(chat)).with_state(cfg)
+}
+
+/// 在本机随机端口启动，返回 `http://127.0.0.1:端口/v1`。
+pub async fn spawn(cfg: MockConfig) -> String {
+    let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.expect("bind");
+    let addr = listener.local_addr().expect("addr");
+    tokio::spawn(async move {
+        let _ = axum::serve(listener, router(cfg)).await;
+    });
+    format!("http://{addr}/v1")
+}
+
+fn authorized(cfg: &MockConfig, headers: &HeaderMap) -> bool {
+    match &cfg.api_key {
+        None => true,
+        Some(key) => headers.get("authorization").and_then(|v| v.to_str().ok()) == Some(&format!("Bearer {key}")),
+    }
+}
+
+async fn models(State(cfg): State<MockConfig>, headers: HeaderMap) -> Response {
+    if !authorized(&cfg, &headers) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": { "message": "bad key" } }))).into_response();
+    }
+    Json(json!({ "data": [{ "id": "mock-small" }, { "id": "mock-large" }] })).into_response()
+}
+
+async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Json<Value>) -> Response {
+    if !authorized(&cfg, &headers) {
+        return (StatusCode::UNAUTHORIZED, Json(json!({ "error": { "message": "bad key" } }))).into_response();
+    }
+    let model = body["model"].as_str().unwrap_or("");
+    if model == "missing" {
+        return (StatusCode::NOT_FOUND, Json(json!({ "error": { "message": "model 'missing' not found" } })))
+            .into_response();
+    }
+    let messages = body["messages"].as_array().cloned().unwrap_or_default();
+    let last = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
+    let reply = format!(
+        "这是测试用的假模型（{model}）。\n\n你说的是：**{last}**\n\n- 这次请求带了 {} 条消息\n- 回答是一段一段流式返回的",
+        messages.len()
+    );
+    // 按字符切成小段，故意让汉字落在不同的数据块里。
+    let chars: Vec<char> = reply.chars().collect();
+    let mut events: Vec<Value> = vec![json!({ "choices": [{ "delta": { "reasoning_content": "先想一想。" } }] })];
+    events.extend(
+        chars.chunks(3).map(|c| json!({ "choices": [{ "delta": { "content": c.iter().collect::<String>() } }] })),
+    );
+    Sse::new(sse(events, cfg.delay)).into_response()
+}
+
+fn sse(events: Vec<Value>, delay: Duration) -> impl Stream<Item = Result<Event, Infallible>> {
+    let total = events.len();
+    tokio_stream::iter(
+        events.into_iter().map(|e| e.to_string()).chain(std::iter::once("[DONE]".to_string())).enumerate(),
+    )
+    .then(move |(i, data)| async move {
+        if !delay.is_zero() && i > 0 && i <= total {
+            tokio::time::sleep(delay).await;
+        }
+        Ok(Event::default().data(data))
+    })
+}
