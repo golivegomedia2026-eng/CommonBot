@@ -52,7 +52,7 @@ fn open_window(app: &AppHandle, url: WebviewUrl, local_port: Option<u16>) {
         // 让网页自己处理拖放（上传文件要用）
         .disable_drag_drop_handler()
         // 带 target=_blank 的链接（网页出处、下载页、已发布的链接）交给系统浏览器
-        .initialization_script(&format!(
+        .initialization_script(format!(
             "document.addEventListener('click', (e) => {{ const a = e.target.closest && e.target.closest('a[target=\"_blank\"]'); if (a && a.href) {{ e.preventDefault(); location.href = 'http://{OPEN_HOST}/?u=' + encodeURIComponent(a.href); }} }}, true);"
         ))
         .on_navigation(move |url| {
