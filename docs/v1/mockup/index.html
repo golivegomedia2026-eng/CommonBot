@@ -424,9 +424,92 @@ a { color: var(--link); }
     .tabbar .link { text-align: center; padding: 8px 2px; font-size: 13px; }
     .tabbar .link.on::before { left: 30%; right: 30%; top: auto; bottom: 2px; width: auto; height: 3px; }
   }
+
+  /* 图标 */
+  .icon { width: 16px; height: 16px; flex: none; stroke: currentColor; fill: none; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+
+  /* 对话页：左侧历史，右侧对话为主 */
+  .chatpage { display: grid; grid-template-columns: 216px minmax(0, 1fr); gap: 16px; align-items: stretch; }
+  .hist { padding: 10px; display: flex; flex-direction: column; gap: 2px; align-self: start; }
+  .hist .h { padding: 7px 10px; border-radius: 8px; cursor: pointer; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--text-2); }
+  .hist .h:hover { background: var(--hover-bg); }
+  .hist .h.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .hist small { padding: 8px 10px 2px; color: var(--text-3); font-size: 11.5px; }
+  .chat.big { min-height: calc(100vh - 150px); }
+  .chat.big .msgs { flex: 1; padding-top: 16px; }
+  .chat.big .msg { max-width: 76%; }
+  .files { display: flex; gap: 6px; flex-wrap: wrap; margin-bottom: 6px; }
+  .att { display: inline-flex; align-items: center; gap: 6px; padding: 3px 8px 3px 4px; border-radius: 7px; background: var(--surface); border: 1px solid var(--line); font-size: 12.5px; max-width: 100%; }
+  .att em { font: 600 10px var(--font-mono); font-style: normal; padding: 2px 4px; border-radius: 4px; background: var(--inset); color: var(--text-2); }
+  .att span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .att .x { border: 0; background: none; padding: 0 2px; cursor: pointer; color: var(--text-3); }
+  .quick { display: flex; gap: 6px; flex-wrap: wrap; padding: 0 16px; }
+
+  /* 输入区 */
+  .composer { margin: 0 16px; border: 1px solid var(--line-strong); border-radius: 12px; background: var(--surface); }
+  .composer:focus-within { border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+  .composer .atts { display: flex; gap: 6px; flex-wrap: wrap; padding: 10px 12px 0; }
+  .composer .att { background: var(--inset); }
+  .composer textarea { border: 0; background: none; resize: none; min-height: 58px; padding: 10px 12px 2px; display: block; }
+  .composer textarea:focus { box-shadow: none; }
+  .tools { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; padding: 6px 8px 8px; }
+  .chip { height: 28px; padding: 0 9px; border-radius: 7px; border: 1px solid var(--line); background: var(--surface); color: var(--text-2); display: inline-flex; align-items: center; gap: 5px; font-size: 12.5px; cursor: pointer; white-space: nowrap; }
+  .chip:hover { background: var(--hover-bg); }
+  .chip[aria-pressed=true] { background: var(--accent-soft); color: var(--accent); border-color: var(--accent); }
+  .chip:disabled { opacity: 0.4; cursor: default; }
+  .chip:focus-visible, .h:focus-visible, .node:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+  .tools .send { margin-left: auto; display: inline-flex; align-items: center; gap: 6px; }
+  .tip { padding: 6px 18px 12px; color: var(--text-3); font-size: 12px; }
+  .pw { position: relative; }
+  .pop { display: none; position: absolute; left: 0; bottom: calc(100% + 6px); width: 270px; z-index: 6; background: var(--surface); border: 1px solid var(--line-strong); border-radius: 10px; padding: 10px; box-shadow: 0 8px 24px color-mix(in srgb, var(--text) 14%, transparent); }
+  .pop.on { display: block; }
+  .pop label { display: flex; align-items: center; gap: 8px; padding: 5px 6px; border-radius: 6px; cursor: pointer; }
+  .pop label:hover { background: var(--hover-bg); }
+  .pop label.sub { padding-left: 26px; }
+  .pop input { accent-color: var(--accent); }
+  .pop b { display: block; padding: 2px 6px 6px; font-weight: 500; font-size: 12px; color: var(--text-3); }
+
+  /* 配置抽屉 */
+  .mask { display: none; position: fixed; inset: 0; z-index: 8; background: color-mix(in srgb, var(--text) 40%, transparent); }
+  .drawer { display: none; position: fixed; top: 0; right: 0; bottom: 0; z-index: 9; width: min(470px, 100%); background: var(--surface); border-left: 1px solid var(--line); padding: 20px 22px; overflow-y: auto; flex-direction: column; gap: 14px; }
+  body.cfg .mask { display: block; } body.cfg .drawer { display: flex; }
+  .drawer .hd2 { display: flex; align-items: center; gap: 8px; padding-bottom: 10px; border-bottom: 1px solid var(--line); }
+
+  /* 知识库：文件夹树 */
+  .kbpage { display: grid; grid-template-columns: 240px minmax(0, 1fr); gap: 16px; align-items: start; }
+  .tree { padding: 10px; display: flex; flex-direction: column; gap: 1px; }
+  .node { display: flex; align-items: center; gap: 7px; width: 100%; text-align: left; padding: 7px 8px; border: 0; border-radius: 8px; background: none; cursor: pointer; color: var(--text-2); }
+  .node:hover { background: var(--hover-bg); }
+  .node.on { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+  .node.l2 { padding-left: 28px; } .node.l3 { padding-left: 48px; }
+  .node span { flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .node i { font-style: normal; font-size: 12px; color: var(--text-3); font-variant-numeric: tabular-nums; font-weight: 400; }
+  .ask { display: flex; flex-direction: column; gap: 10px; border-color: var(--accent); }
+  .ask .composer { margin: 0; }
+  .crumb { color: var(--text-3); font-size: 12.5px; }
+
+  @media (max-width: 900px) {
+    .chatpage, .kbpage { grid-template-columns: 1fr; }
+    .hist { display: none; }
+    .chat.big .msg { max-width: 90%; }
+    .tree { flex-direction: row; overflow-x: auto; }
+    .tree .node { width: auto; flex: none; padding: 6px 10px; } .tree .node i, .tree .newf { display: none; }
+    .pop { width: min(270px, 78vw); }
+  }
 </style>
 </head>
 <body>
+<svg width="0" height="0" style="position:absolute" aria-hidden="true">
+  <symbol id="i-clip" viewBox="0 0 16 16"><path d="M13 7.5 8 12.5a3 3 0 0 1-4.2-4.2l5.4-5.4a2 2 0 0 1 2.8 2.8L6.7 11a1 1 0 0 1-1.4-1.4L10 5"/></symbol>
+  <symbol id="i-folder" viewBox="0 0 16 16"><path d="M1.5 4.5v8h13v-7H8L6.5 3.5h-5z"/></symbol>
+  <symbol id="i-globe" viewBox="0 0 16 16"><circle cx="8" cy="8" r="6"/><path d="M2 8h12M8 2c2 2 2 10 0 12M8 2c-2 2-2 10 0 12"/></symbol>
+  <symbol id="i-chip" viewBox="0 0 16 16"><rect x="4" y="4" width="8" height="8" rx="1.5"/><path d="M6.5 1.5v2M9.5 1.5v2M6.5 12.5v2M9.5 12.5v2M1.5 6.5h2M1.5 9.5h2M12.5 6.5h2M12.5 9.5h2"/></symbol>
+  <symbol id="i-mic" viewBox="0 0 16 16"><rect x="6" y="1.5" width="4" height="8" rx="2"/><path d="M3.5 8a4.5 4.5 0 0 0 9 0M8 12.5v2"/></symbol>
+  <symbol id="i-send" viewBox="0 0 16 16"><path d="M8 13V3M3.5 7.5 8 3l4.5 4.5"/></symbol>
+  <symbol id="i-gear" viewBox="0 0 16 16"><circle cx="8" cy="8" r="2.2"/><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4"/></symbol>
+  <symbol id="i-plus" viewBox="0 0 16 16"><path d="M8 3v10M3 8h10"/></symbol>
+  <symbol id="i-bulb" viewBox="0 0 16 16"><path d="M5.5 10.5a4 4 0 1 1 5 0v1.5h-5zM6.5 14.5h3"/></symbol>
+</svg>
 <div class="shell">
   <nav class="side" aria-label="主导航">
     <div class="brand"><span class="logo">智</span><b>CommonBot</b></div>
@@ -446,20 +529,20 @@ a { color: var(--link); }
       <header>
         <div><div class="eyebrow">工作台</div><h1>智能体</h1></div>
         <button class="btn primary sp" data-go="builder">对话生成</button>
-        <button class="btn ghost" data-go="edit">手动新建</button>
+        <button class="btn ghost" data-go="chat" data-cfg>手动新建</button>
       </header>
       <div class="agents">
-        <div class="card agent" data-go="edit">
+        <div class="card agent" data-go="chat">
           <div class="top"><span class="seal">售</span><div><h2>售后答疑</h2><span class="muted">今天 14 次对话</span></div></div>
           <p>回答产品安装、保修和退换货问题，依据售后手册。</p>
           <div class="row"><span class="tag">知识库 2</span><span class="tag">只用知识库</span><span class="tag ok">已发布</span></div>
         </div>
-        <div class="card agent" data-go="edit">
+        <div class="card agent" data-go="chat">
           <div class="top"><span class="seal">标</span><div><h2>招标文件助手</h2><span class="muted">昨天 3 次对话</span></div></div>
           <p>解读招标文件的资质、评分和时间要求，列出要准备的材料。</p>
           <div class="row"><span class="tag">知识库 1</span><span class="tag">知识库优先</span><span class="tag ok">已发布</span></div>
         </div>
-        <div class="card agent" data-go="edit">
+        <div class="card agent" data-go="chat">
           <div class="top"><span class="seal">研</span><div><h2>行业动态</h2><span class="muted">尚未使用</span></div></div>
           <p>联网查找行业新闻和政策，整理成带来源的简报。</p>
           <div class="row"><span class="tag">联网</span><span class="tag info">允许云端模型</span><span class="tag">草稿</span></div>
@@ -468,46 +551,37 @@ a { color: var(--link); }
       </div>
     </section>
 
-    <!-- 智能体编辑 + 试聊 -->
-    <section class="view" id="edit">
+    <!-- 智能体：对话为主，配置收进按钮 -->
+    <section class="view" id="chat">
       <header>
-        <div><div class="eyebrow">智能体 / 编辑</div><h1>售后答疑</h1></div>
+        <div><div class="eyebrow">智能体</div><h1>售后答疑</h1></div>
         <span class="tag ok sp">已发布</span>
-        <button class="btn ghost">运行自测</button>
-        <button class="btn primary">保存</button>
+        <button class="btn ghost" data-cfg><svg class="icon" style="vertical-align:-3px"><use href="#i-gear"/></svg> 配置</button>
+        <button class="btn primary"><svg class="icon" style="vertical-align:-3px"><use href="#i-plus"/></svg> 新对话</button>
       </header>
-      <div class="cols">
-        <div class="card form">
-          <label class="field"><span>名称</span><input type="text" value="售后答疑"></label>
-          <label class="field"><span>负责的任务</span><textarea>回答产品安装、保修期限、退换货流程的问题，依据售后手册和保修条款。</textarea></label>
-          <label class="field"><span>不负责的范围</span><textarea>不报价，不承诺赔偿金额；遇到这类问题请对方联系人工客服。</textarea></label>
-          <div class="field"><span>回答依据</span>
-            <div class="seg"><button aria-pressed="true">只用知识库</button><button aria-pressed="false">知识库优先，不足时联网</button><button aria-pressed="false">知识库和联网都用</button></div>
-            <span class="muted">知识库里找不到依据时，直接说明没有，不猜。</span>
-          </div>
-          <div class="field"><span>知识库</span>
-            <div class="row"><span class="tag">售后手册 ×</span><span class="tag">保修条款 ×</span><button class="btn ghost sm">＋ 添加</button></div>
-          </div>
-          <label class="field"><span>模型</span><select><option>本机 · 日常模型（默认）</option><option>本机 · 强推理模型</option><option>云端后备（需在设置中添加）</option></select></label>
-          <div class="row"><span class="switch"></span><span>本机模型不可用时，允许改用云端模型</span></div>
-          <div class="field"><span>独立使用</span>
-            <div class="kv"><span>http://spark.local:8600/a/shouhou</span><button class="btn ghost sm">复制链接</button></div>
-            <div class="kv"><span>API 密钥 cb-····················3f9a</span><button class="btn ghost sm">复制</button><button class="btn ghost sm">重新生成</button></div>
-          </div>
+      <div class="chatpage">
+        <div class="card hist">
+          <small>今天</small>
+          <button class="h on" style="border:0;text-align:left">屏幕保修与摔坏赔偿</button>
+          <button class="h" style="border:0;background:none;text-align:left">安装时提示驱动不兼容</button>
+          <small>更早</small>
+          <button class="h" style="border:0;background:none;text-align:left">退货运费谁承担</button>
+          <button class="h" style="border:0;background:none;text-align:left">延保怎么买</button>
         </div>
-        <div class="card chat">
-          <div class="hd"><h2>试聊</h2><span class="muted">改动保存前也可以试</span><button class="btn ghost sm" style="margin-left:auto">清空</button></div>
+        <div class="card chat big">
           <div class="msgs">
             <div class="msg me">买了 14 个月，屏幕坏了还能保修吗？</div>
             <div class="msg bot">可以。整机保修 12 个月，但屏幕属于主要部件，保修 24 个月 <span class="cite">1</span>。请准备购买凭证，在服务页提交报修 <span class="cite">2</span>。
-              <div class="srcs"><b>知识库</b><span><span class="cite">1</span> 保修条款.pdf · 第 3 页</span><span><span class="cite">2</span> 售后手册.docx · 4.2 报修流程</span></div>
+              <div class="srcs"><b>知识库 · 售后资料</b><span><span class="cite">1</span> 保修条款.pdf · 第 3 页</span><span><span class="cite">2</span> 产品手册.docx · 4.2 报修流程</span></div>
             </div>
-            <div class="msg me">那人为摔坏的能赔多少钱？</div>
-            <div class="msg bot">赔偿金额不在我负责的范围内，请联系人工客服确认。保修条款里写明人为损坏不在保修内 <span class="cite">1</span>。
-              <div class="srcs"><b>知识库</b><span><span class="cite">1</span> 保修条款.pdf · 第 5 页</span></div>
+            <div class="msg me"><div class="files"><span class="att"><em>JPG</em><span>屏幕照片.jpg</span></span><span class="att"><em>PDF</em><span>购买发票.pdf</span></span></div>这是照片和发票，帮我看看符不符合保修条件。</div>
+            <div class="msg bot">发票日期是 2025 年 9 月 2 日，在屏幕 24 个月保修期内 <span class="cite web">A</span>。照片里屏幕左下角有放射状裂纹 <span class="cite web">B</span>，这类外力损坏按条款不在保修内 <span class="cite">1</span>，建议走付费维修。
+              <div class="srcs"><b>本次上传</b><span><span class="cite web">A</span> 购买发票.pdf · 第 1 页</span><span><span class="cite web">B</span> 屏幕照片.jpg</span><b>知识库 · 售后资料</b><span><span class="cite">1</span> 保修条款.pdf · 第 5 页</span></div>
             </div>
           </div>
-          <div class="compose"><input type="text" placeholder="输入问题试一试"><button class="btn primary">发送</button></div>
+          <div class="quick"><button class="chip">付费维修怎么收费？</button><button class="chip">报修需要准备什么？</button><button class="chip">保修期怎么算？</button></div>
+          <div data-composer="chat"></div>
+          <div class="tip">回车发送，Shift + 回车换行 · 可把文件拖进来，或直接粘贴截图</div>
         </div>
       </div>
     </section>
@@ -530,7 +604,7 @@ a { color: var(--link); }
             <div class="msg me">不要预测中标，也不要帮写报价。</div>
             <div class="msg bot">已整理成定义，并用 4 个问题试答，其中 1 个没通过：扫描件里的评分表没识别完整。要我改用更细的表格识别再试一次吗？</div>
           </div>
-          <div class="compose"><input type="text" placeholder="继续说，或者说「可以了」"><button class="btn primary">发送</button></div>
+          <div data-composer="builder"></div><div class="tip">可以上传样例对话、现有话术、要用的资料</div>
         </div>
         <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
           <div class="card spec">
@@ -559,20 +633,38 @@ a { color: var(--link); }
       </div>
     </section>
 
-    <!-- 知识库 -->
+    <!-- 知识库：按文件夹组织，可只针对某个文件夹问答 -->
     <section class="view" id="kb">
       <header>
-        <div><div class="eyebrow">知识库 / 招标文件</div><h1>招标文件</h1></div>
-        <button class="btn ghost sp">检索测试</button>
+        <div><div class="eyebrow">工作台</div><h1>知识库</h1></div>
+        <button class="btn ghost sp">新建知识库</button>
         <button class="btn primary">上传文档</button>
       </header>
-      <div class="kpis">
-        <div class="card"><span class="muted">文档</span><div class="num">1,284</div><span class="muted">其中扫描件 312</span></div>
-        <div class="card"><span class="muted">片段</span><div class="num">86,410</div><span class="muted">已全部向量化</span></div>
+      <div class="kbpage">
+        <div class="card tree">
+          <button class="node"><svg class="icon"><use href="#i-folder"/></svg><span>售后资料</span><i>214</i></button>
+          <button class="node l2"><svg class="icon"><use href="#i-folder"/></svg><span>产品手册</span><i>156</i></button>
+          <button class="node l2"><svg class="icon"><use href="#i-folder"/></svg><span>保修条款</span><i>58</i></button>
+          <button class="node"><svg class="icon"><use href="#i-folder"/></svg><span>招标文件</span><i>1,284</i></button>
+          <button class="node l2 on"><svg class="icon"><use href="#i-folder"/></svg><span>2026 政务云二期</span><i>148</i></button>
+          <button class="node l3"><svg class="icon"><use href="#i-folder"/></svg><span>更正公告</span><i>6</i></button>
+          <button class="node l2"><svg class="icon"><use href="#i-folder"/></svg><span>历年中标公告</span><i>1,130</i></button>
+          <button class="node"><svg class="icon"><use href="#i-folder"/></svg><span>行业研究</span><i>92</i></button>
+          <button class="btn ghost sm newf" style="margin-top:8px"><svg class="icon" style="vertical-align:-3px"><use href="#i-plus"/></svg> 新建文件夹</button>
+        </div>
+        <div style="display:flex;flex-direction:column;gap:16px;min-width:0">
+          <div class="row"><span class="crumb">招标文件 /</span><h2>2026 政务云二期</h2><button class="btn ghost sm" style="margin-left:auto">重命名</button><button class="btn ghost sm">移动</button></div>
+          <div class="card ask">
+            <div class="row"><h2>只在这个文件夹里问</h2><span class="tag info">范围：招标文件 / 2026 政务云二期（含子文件夹）</span></div>
+            <div data-composer="kb"></div>
+          </div>
+          <div class="kpis">
+        <div class="card"><span class="muted">文档</span><div class="num">148</div><span class="muted">其中扫描件 37</span></div>
+        <div class="card"><span class="muted">片段</span><div class="num">9,632</div><span class="muted">已全部向量化</span></div>
         <div class="card"><span class="muted">排队中</span><div class="num">7</div><span class="muted">预计 6 分钟</span></div>
         <div class="card" style="border-color: var(--point)"><span class="muted">失败</span><div class="num">2</div><span class="muted">可重试</span></div>
       </div>
-      <div class="tbl"><table>
+          <div class="tbl"><table>
         <thead><tr><th>文档</th><th>类型</th><th class="n">页数</th><th class="n">片段</th><th>状态</th><th></th></tr></thead>
         <tbody>
           <tr><td class="name">某市政务云二期招标文件.pdf</td><td>PDF</td><td class="n">148</td><td class="n">612</td><td><span class="tag ok">✓ 已入库</span></td><td><button class="btn ghost sm">查看片段</button></td></tr>
@@ -582,6 +674,8 @@ a { color: var(--link); }
           <tr><td class="name">历年中标公告汇总.xlsx</td><td>表格</td><td class="n">—</td><td class="n">2,304</td><td><span class="tag ok">✓ 已入库</span></td><td><button class="btn ghost sm">查看片段</button></td></tr>
         </tbody>
       </table></div>
+        </div>
+      </div>
     </section>
 
     <!-- 模型与联网 -->
@@ -633,6 +727,29 @@ a { color: var(--link); }
   </main>
 </div>
 
+<div class="mask" data-cfg-close></div>
+<aside class="drawer form" aria-label="智能体配置">
+  <div class="hd2"><h2>配置 · 售后答疑</h2><button class="btn ghost sm" style="margin-left:auto">运行自测</button><button class="btn primary sm" data-cfg-close>保存</button><button class="btn ghost sm" data-cfg-close>关闭</button></div>
+
+          <label class="field"><span>名称</span><input type="text" value="售后答疑"></label>
+          <label class="field"><span>负责的任务</span><textarea>回答产品安装、保修期限、退换货流程的问题，依据售后手册和保修条款。</textarea></label>
+          <label class="field"><span>不负责的范围</span><textarea>不报价，不承诺赔偿金额；遇到这类问题请对方联系人工客服。</textarea></label>
+          <div class="field"><span>回答依据</span>
+            <div class="seg"><button aria-pressed="true">只用知识库</button><button aria-pressed="false">知识库优先，不足时联网</button><button aria-pressed="false">知识库和联网都用</button></div>
+            <span class="muted">知识库里找不到依据时，直接说明没有，不猜。</span>
+          </div>
+          <div class="field"><span>知识范围（可选到文件夹）</span>
+            <div class="row"><span class="tag">售后资料 / 产品手册 ×</span><span class="tag">售后资料 / 保修条款 ×</span><button class="btn ghost sm">＋ 添加</button></div>
+          </div>
+          <label class="field"><span>模型</span><select><option>本机 · 日常模型（默认）</option><option>本机 · 强推理模型</option><option>云端后备（需在设置中添加）</option></select></label>
+          <div class="row"><span class="switch"></span><span>本机模型不可用时，允许改用云端模型</span></div>
+          <div class="field"><span>独立使用</span>
+            <div class="kv"><span>http://spark.local:8600/a/shouhou</span><button class="btn ghost sm">复制链接</button></div>
+            <div class="kv"><span>API 密钥 cb-····················3f9a</span><button class="btn ghost sm">复制</button><button class="btn ghost sm">重新生成</button></div>
+          </div>
+        
+</aside>
+
 <nav class="tabbar" aria-label="主导航">
   <button class="link on" data-go="agents">智能体</button>
   <button class="link" data-go="builder">建造师</button>
@@ -641,25 +758,68 @@ a { color: var(--link); }
 </nav>
 
 <script>
+  const ic = (n) => `<svg class="icon"><use href="#i-${n}"/></svg>`;
+  const scopePop = `<div class="pop"><b>这次回答查哪些资料</b>
+    <label><input type="checkbox" checked> 按智能体的默认范围</label>
+    <label><input type="checkbox"> 售后资料</label>
+    <label class="sub"><input type="checkbox" checked> 产品手册</label>
+    <label class="sub"><input type="checkbox" checked> 保修条款</label>
+    <label><input type="checkbox"> 招标文件</label>
+    <label><input type="checkbox"> 行业研究</label>
+    <label><input type="checkbox"> 不查知识库，只看上传的文件</label></div>`;
+  const COMPOSERS = {
+    chat: { ph: "问点什么…", atts: [["XLSX", "维修报价单.xlsx"]], scope: "产品手册、保修条款", web: false },
+    builder: { ph: "继续说，或者说「可以了」", atts: [["DOCX", "现有话术.docx"], ["PDF", "招标文件样例.pdf"]], scope: null, web: false },
+    kb: { ph: "例如：投标保证金是多少，什么时候交？", atts: [], scope: null, web: false, lite: true },
+  };
+  document.querySelectorAll("[data-composer]").forEach((el) => {
+    const o = COMPOSERS[el.dataset.composer];
+    el.className = "composer";
+    el.innerHTML =
+      (o.atts.length ? `<div class="atts">${o.atts.map(([t, n]) => `<span class="att"><em>${t}</em><span>${n}</span><button class="x" aria-label="移除">×</button></span>`).join("")}</div>` : "") +
+      `<textarea rows="2" placeholder="${o.ph}"></textarea>
+       <div class="tools">
+         <button class="chip" title="文档、表格、图片、压缩包、音频">${ic("clip")}上传文件</button>
+         ${o.scope ? `<span class="pw">${scopePop}<button class="chip" data-pop aria-pressed="true">${ic("folder")}${o.scope} ▾</button></span>` : ""}
+         ${o.lite ? "" : `<button class="chip" data-toggle aria-pressed="${o.web}">${ic("globe")}联网</button>
+         <button class="chip" data-toggle aria-pressed="false">${ic("bulb")}深入思考</button>
+         <button class="chip" title="本机 · 日常模型">${ic("chip")}日常模型 ▾</button>
+         <button class="chip" disabled title="语音在后续版本提供" aria-label="语音">${ic("mic")}</button>`}
+         <button class="btn primary sm send">${ic("send")}发送</button>
+       </div>`;
+  });
+
   function go(id) {
     document.querySelectorAll(".view").forEach((v) => v.classList.toggle("on", v.id === id));
-    const nav = id === "edit" ? "agents" : id;
+    const nav = id === "chat" ? "agents" : id;
     document.querySelectorAll("nav .link").forEach((l) => {
       const on = l.dataset.go === nav || (nav === "models" && l.dataset.go === "system" && l.closest(".tabbar"));
       l.classList.toggle("on", !!on);
     });
     window.scrollTo(0, 0);
-    try { history.replaceState(null, "", "#" + id); } catch {}
+    
   }
   document.addEventListener("click", (e) => {
     const t = e.target.closest("[data-go]");
     if (t) go(t.dataset.go);
     const s = e.target.closest(".seg button");
     if (s) s.parentElement.querySelectorAll("button").forEach((b) => b.setAttribute("aria-pressed", String(b === s)));
+    const c = e.target.closest("[data-toggle]");
+    if (c) c.setAttribute("aria-pressed", String(c.getAttribute("aria-pressed") !== "true"));
+    const pb = e.target.closest("[data-pop]");
+    document.querySelectorAll(".pop.on").forEach((p) => { if (!pb && !e.target.closest(".pop")) p.classList.remove("on"); });
+    if (pb) pb.parentElement.querySelector(".pop").classList.toggle("on");
+    if (e.target.closest("[data-cfg]")) document.body.classList.add("cfg");
+    if (e.target.closest("[data-cfg-close]")) document.body.classList.remove("cfg");
+    const nd = e.target.closest(".node");
+    if (nd) nd.parentElement.querySelectorAll(".node").forEach((n) => n.classList.toggle("on", n === nd));
     const w = e.target.closest(".switch");
     if (w) w.classList.toggle("on");
   });
-  if (location.hash && document.getElementById(location.hash.slice(1))) go(location.hash.slice(1));
+  const [hv, hx] = location.hash.slice(1).split("+");
+  if (hv && document.getElementById(hv)) go(hv);
+  if (hx === "cfg") document.body.classList.add("cfg");
+  if (hx === "pop") document.querySelector("#" + hv + " .pop")?.classList.add("on");
 
   const box = document.getElementById("realms");
   function draw() {

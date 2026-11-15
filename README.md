@@ -11,12 +11,16 @@
 
 ## 效果图截图
 
-| 建造师（宣纸） | 智能体编辑与试聊（黛夜·青灯） |
+| 智能体对话（宣纸） | 知识库文件夹 |
 | --- | --- |
-| ![建造师](docs/screenshots/builder-light.png) | ![编辑](docs/screenshots/edit-dark.png) |
+| ![对话](docs/screenshots/chat-light.png) | ![知识库](docs/screenshots/kb-light.png) |
 
-| 知识库 | 手机端 |
+| 提问时选知识范围 | 配置抽屉 |
 | --- | --- |
-| ![知识库](docs/screenshots/kb-light.png) | ![手机端](docs/screenshots/builder-phone.png) |
+| ![范围](docs/screenshots/chat-scope-light.png) | ![配置](docs/screenshots/chat-config-light.png) |
+
+| 建造师 | 深色（黛夜·青灯） | 手机端 |
+| --- | --- | --- |
+| ![建造师](docs/screenshots/builder-light.png) | ![深色](docs/screenshots/chat-dark.png) | ![手机](docs/screenshots/chat-phone.png) |
 
 M&J Group · 473276@qq.com
