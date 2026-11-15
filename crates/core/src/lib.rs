@@ -1,5 +1,6 @@
 //! CommonBot 的业务核心：数据存储、推理后端访问。不依赖 HTTP 框架和界面。
 
+pub mod agent;
 pub mod db;
 pub mod error;
 pub mod llm;

@@ -188,6 +188,7 @@ pub fn seed_defaults(c: &Connection) -> Result<()> {
 #[derive(Debug, Clone, Serialize)]
 pub struct Conversation {
     pub id: String,
+    pub agent_id: String,
     pub title: String,
     pub provider_id: Option<String>,
     pub model: Option<String>,
@@ -210,6 +211,7 @@ pub struct Message {
 fn conversation_from_row(r: &rusqlite::Row) -> rusqlite::Result<Conversation> {
     Ok(Conversation {
         id: r.get("id")?,
+        agent_id: r.get("agent_id")?,
         title: r.get("title")?,
         provider_id: r.get("provider_id")?,
         model: r.get("model")?,
@@ -231,9 +233,13 @@ fn message_from_row(r: &rusqlite::Row) -> rusqlite::Result<Message> {
     })
 }
 
-pub fn create_conversation(c: &Connection) -> Result<Conversation> {
+pub fn create_conversation(c: &Connection, agent_id: &str) -> Result<Conversation> {
+    crate::agent::get(c, agent_id)?;
     let (id, now) = (new_id(), now_ms());
-    c.execute("INSERT INTO conversations(id, created_at, updated_at) VALUES (?1, ?2, ?2)", params![id, now])?;
+    c.execute(
+        "INSERT INTO conversations(id, agent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
+        params![id, agent_id, now],
+    )?;
     get_conversation(c, &id)
 }
 
@@ -243,9 +249,11 @@ pub fn get_conversation(c: &Connection, id: &str) -> Result<Conversation> {
         .ok_or(Error::NotFound("conversation"))
 }
 
-pub fn list_conversations(c: &Connection) -> Result<Vec<Conversation>> {
-    let mut stmt = c.prepare("SELECT * FROM conversations ORDER BY updated_at DESC, id LIMIT 500")?;
-    let rows = stmt.query_map([], conversation_from_row)?;
+/// 某个智能体名下的对话，最近用过的在前。
+pub fn list_conversations(c: &Connection, agent_id: &str) -> Result<Vec<Conversation>> {
+    let mut stmt =
+        c.prepare("SELECT * FROM conversations WHERE agent_id = ?1 ORDER BY updated_at DESC, id LIMIT 500")?;
+    let rows = stmt.query_map([agent_id], conversation_from_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }
 
@@ -379,7 +387,7 @@ mod tests {
     async fn conversation_title_and_cascade_delete() {
         let db = Db::open_in_memory().unwrap();
         db.run(|c| {
-            let conv = create_conversation(c)?;
+            let conv = create_conversation(c, crate::agent::GENERAL_AGENT_ID)?;
             add_user_message(
                 c,
                 &conv.id,

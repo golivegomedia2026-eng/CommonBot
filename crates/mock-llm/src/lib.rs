@@ -61,8 +61,14 @@ async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Jso
     }
     let messages = body["messages"].as_array().cloned().unwrap_or_default();
     let last = messages.last().and_then(|m| m["content"].as_str()).unwrap_or("").to_string();
+    let system = messages
+        .first()
+        .filter(|m| m["role"] == "system")
+        .and_then(|m| m["content"].as_str())
+        .map(|s| format!("\n- 系统提示词开头：{}", s.chars().take(24).collect::<String>()))
+        .unwrap_or_default();
     let reply = format!(
-        "这是测试用的假模型（{model}）。\n\n你说的是：**{last}**\n\n- 这次请求带了 {} 条消息\n- 回答是一段一段流式返回的",
+        "这是测试用的假模型（{model}）。\n\n你说的是：**{last}**\n\n- 这次请求带了 {} 条消息\n- 回答是一段一段流式返回的{system}",
         messages.len()
     );
     // 按字符切成小段，故意让汉字落在不同的数据块里。

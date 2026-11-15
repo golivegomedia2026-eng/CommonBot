@@ -1,12 +1,13 @@
 use std::convert::Infallible;
 use std::time::Instant;
 
-use axum::extract::{Path, State};
+use axum::extract::{Path, Query, State};
 use axum::http::{header, StatusCode};
 use axum::response::sse::{Event, KeepAlive, Sse};
 use axum::response::{IntoResponse, Response};
 use axum::routing::{get, post};
 use axum::{Extension, Json, Router};
+use commonbot_core::agent::{self, Agent, AgentInput, AgentSummary};
 use commonbot_core::llm::{ChatMessage, Delta, Endpoint};
 use commonbot_core::store::{self, Conversation, Message, Provider, ProviderInput};
 use commonbot_core::Error;
@@ -30,6 +31,9 @@ pub fn api() -> Router<AppState> {
         .route("/providers", get(list_providers).post(create_provider))
         .route("/providers/{id}", axum::routing::put(update_provider).delete(delete_provider))
         .route("/providers/{id}/check", post(check_provider))
+        .route("/agents", get(list_agents).post(create_agent))
+        .route("/agents/prompt-preview", post(preview_prompt))
+        .route("/agents/{id}", get(get_agent).put(update_agent).delete(delete_agent))
         .route("/conversations", get(list_conversations).post(create_conversation))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         .route("/conversations/{id}/messages", post(send_message))
@@ -125,14 +129,60 @@ async fn check_provider(State(st): State<AppState>, Path(id): Path<String>) -> A
     Ok(Json(json!({ "models": models, "latency_ms": started.elapsed().as_millis() as u64 })))
 }
 
-// ---------- 对话 ----------
+// ---------- 智能体 ----------
 
-async fn list_conversations(State(st): State<AppState>) -> ApiResult<Json<Vec<Conversation>>> {
-    Ok(Json(st.db.run(|c| store::list_conversations(c)).await?))
+fn agent_json(a: &Agent) -> Value {
+    let mut v = serde_json::to_value(a).unwrap_or_default();
+    v["system_prompt"] = json!(a.system_prompt());
+    v
 }
 
-async fn create_conversation(State(st): State<AppState>) -> ApiResult<Json<Conversation>> {
-    Ok(Json(st.db.run(|c| store::create_conversation(c)).await?))
+async fn list_agents(State(st): State<AppState>) -> ApiResult<Json<Vec<AgentSummary>>> {
+    Ok(Json(st.db.run(|c| agent::list(c)).await?))
+}
+
+async fn create_agent(State(st): State<AppState>, Json(input): Json<AgentInput>) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::create(c, input)).await?)))
+}
+
+async fn get_agent(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::get(c, &id)).await?)))
+}
+
+async fn update_agent(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(input): Json<AgentInput>,
+) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::update(c, &id, input)).await?)))
+}
+
+async fn delete_agent(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    st.db.run(move |c| agent::delete(c, &id)).await?;
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// 编辑时预览：按还没保存的定义生成系统提示词。
+async fn preview_prompt(Json(input): Json<AgentInput>) -> Json<Value> {
+    Json(json!({ "system_prompt": input.system_prompt() }))
+}
+
+// ---------- 对话 ----------
+
+#[derive(Deserialize)]
+struct AgentRef {
+    agent_id: String,
+}
+
+async fn list_conversations(
+    State(st): State<AppState>,
+    Query(q): Query<AgentRef>,
+) -> ApiResult<Json<Vec<Conversation>>> {
+    Ok(Json(st.db.run(move |c| store::list_conversations(c, &q.agent_id)).await?))
+}
+
+async fn create_conversation(State(st): State<AppState>, Json(q): Json<AgentRef>) -> ApiResult<Json<Conversation>> {
+    Ok(Json(st.db.run(move |c| store::create_conversation(c, &q.agent_id)).await?))
 }
 
 async fn get_conversation(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
@@ -162,7 +212,9 @@ async fn delete_conversation(State(st): State<AppState>, Path(id): Path<String>)
 #[derive(Deserialize)]
 struct SendBody {
     content: String,
-    provider_id: String,
+    /// 智能体固定了模型时可以不传。
+    #[serde(default)]
+    provider_id: Option<String>,
     #[serde(default)]
     model: Option<String>,
 }
@@ -199,14 +251,34 @@ async fn send_message(
     if content.is_empty() || content.chars().count() > MAX_MESSAGE_CHARS {
         return Err(Error::Invalid("content".into()).into());
     }
-    let provider_id = body.provider_id.clone();
-    let provider = st.db.run(move |c| store::get_provider(c, &provider_id)).await?;
-    let model = body
-        .model
-        .map(|m| m.trim().to_string())
-        .filter(|m| !m.is_empty())
-        .or_else(|| provider.default_model.clone())
-        .ok_or_else(|| Error::Invalid("model".into()))?;
+    let conv_id = id.clone();
+    let (agent, fixed) = st
+        .db
+        .run(move |c| {
+            let conv = store::get_conversation(c, &conv_id)?;
+            let agent = agent::get(c, &conv.agent_id)?;
+            // 智能体固定的推理服务已被删除时，退回到对话里选的
+            let fixed = match &agent.provider_id {
+                Some(pid) => store::get_provider(c, pid).ok(),
+                None => None,
+            };
+            Ok((agent, fixed))
+        })
+        .await?;
+    let (provider, model) = match (fixed, agent.model.clone()) {
+        (Some(provider), Some(model)) => (provider, model),
+        _ => {
+            let provider_id = body.provider_id.clone().ok_or_else(|| Error::Invalid("model".into()))?;
+            let provider = st.db.run(move |c| store::get_provider(c, &provider_id)).await?;
+            let model = body
+                .model
+                .map(|m| m.trim().to_string())
+                .filter(|m| !m.is_empty())
+                .or_else(|| provider.default_model.clone())
+                .ok_or_else(|| Error::Invalid("model".into()))?;
+            (provider, model)
+        }
+    };
 
     let (conv_id, pid, mdl) = (id.clone(), provider.id.clone(), model.clone());
     let (user_msg, conversation, messages) = st
@@ -225,7 +297,9 @@ async fn send_message(
         let mut failure: Option<Error> = None;
         let mut stopped = false;
 
-        match st.llm.chat_stream(&endpoint(&provider), &model, &history(&messages)).await {
+        let mut context = vec![ChatMessage { role: "system".into(), content: agent.system_prompt() }];
+        context.extend(history(&messages));
+        match st.llm.chat_stream(&endpoint(&provider), &model, &context).await {
             Err(e) => failure = Some(e),
             Ok(mut stream) => loop {
                 tokio::select! {

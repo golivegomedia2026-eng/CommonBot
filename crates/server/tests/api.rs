@@ -151,7 +151,7 @@ async fn streams_a_reply_and_keeps_the_conversation() {
     let app = setup().await;
     let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
     let pid = add_provider(&app, &base, None).await;
-    let conv = req(Method::POST, "/api/conversations").send(&app).await.json();
+    let conv = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" })).send(&app).await.json();
     let cid = conv["id"].as_str().unwrap();
     let path = format!("/api/conversations/{cid}/messages");
 
@@ -175,14 +175,14 @@ async fn streams_a_reply_and_keeps_the_conversation() {
         .send(&app)
         .await;
     let reply = r.events().last().unwrap().1["message"]["content"].as_str().unwrap().to_string();
-    assert!(reply.contains("mock-large") && reply.contains("带了 3 条消息"), "{reply}");
+    assert!(reply.contains("mock-large") && reply.contains("带了 4 条消息"), "{reply}");
 
     // 重新读取：四条消息、标题取自第一句
     let got = req(Method::GET, &format!("/api/conversations/{cid}")).send(&app).await.json();
     assert_eq!(got["messages"].as_array().unwrap().len(), 4);
     assert_eq!(got["conversation"]["title"], "你好，介绍一下自己");
     assert_eq!(got["conversation"]["model"], "mock-large");
-    let list = req(Method::GET, "/api/conversations").send(&app).await.json();
+    let list = req(Method::GET, "/api/conversations?agent_id=general").send(&app).await.json();
     assert_eq!(list.as_array().unwrap().len(), 1);
 
     // 删除后读不到
@@ -198,7 +198,11 @@ async fn model_failure_is_reported_and_saved() {
     let app = setup().await;
     let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
     let pid = add_provider(&app, &base, None).await;
-    let cid = req(Method::POST, "/api/conversations").send(&app).await.json()["id"].as_str().unwrap().to_string();
+    let cid = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" })).send(&app).await.json()
+        ["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
     let path = format!("/api/conversations/{cid}/messages");
 
     let r = req(Method::POST, &path)
@@ -280,7 +284,7 @@ async fn refuses_cross_site_writes_and_disguised_local_hosts() {
     let app = setup().await;
 
     // 别的网页借本机浏览器发来的写请求
-    let mut r = req(Method::POST, "/api/conversations");
+    let mut r = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" }));
     r.origin = Some("https://evil.example");
     let r = r.send(&app).await;
     assert_eq!(
@@ -289,7 +293,7 @@ async fn refuses_cross_site_writes_and_disguised_local_hosts() {
     );
 
     // 同源的写请求正常
-    let mut r = req(Method::POST, "/api/conversations");
+    let mut r = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" }));
     r.origin = Some("http://localhost:8600");
     assert_eq!(r.send(&app).await.status, StatusCode::OK);
 
@@ -307,4 +311,95 @@ async fn unknown_api_path_is_json_404_and_pages_fall_back_to_index() {
     let r = req(Method::GET, "/settings/models").send(&app).await;
     assert_eq!(r.status, StatusCode::OK);
     assert!(r.text.to_lowercase().contains("<!doctype html"));
+}
+
+#[tokio::test]
+async fn agents_answer_under_their_own_definition_and_model() {
+    let app = setup().await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let pid = add_provider(&app, &base, None).await;
+
+    // 自带通用助手
+    let list = req(Method::GET, "/api/agents").send(&app).await.json();
+    assert_eq!(list[0]["id"], "general");
+
+    // 预览还没保存的定义
+    let draft = json!({ "name": "售后答疑", "duty": "回答保修和退换货问题", "out_of_scope": "不报价", "examples": ["保修多久？"] });
+    let preview = req(Method::POST, "/api/agents/prompt-preview").json(draft.clone()).send(&app).await.json();
+    assert!(preview["system_prompt"].as_str().unwrap().contains("## 不在你负责范围内\n不报价"));
+
+    // 新建两个职责不同的智能体，其中一个固定模型
+    let a = req(Method::POST, "/api/agents").json(draft).send(&app).await.json();
+    assert_eq!(a["examples"], json!(["保修多久？"]));
+    let b = req(Method::POST, "/api/agents")
+        .json(json!({ "name": "招标文件助手", "duty": "解读招标文件", "provider_id": pid, "model": "mock-large" }))
+        .send(&app)
+        .await
+        .json();
+    let (aid, bid) = (a["id"].as_str().unwrap(), b["id"].as_str().unwrap());
+
+    let ask = |agent_id: String, body: Value| {
+        let app = app.clone();
+        async move {
+            let cid =
+                req(Method::POST, "/api/conversations").json(json!({ "agent_id": agent_id })).send(&app).await.json()
+                    ["id"]
+                    .as_str()
+                    .unwrap()
+                    .to_string();
+            let r = req(Method::POST, &format!("/api/conversations/{cid}/messages")).json(body).send(&app).await;
+            assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+            r.events().last().unwrap().1["message"]["content"].as_str().unwrap().to_string()
+        }
+    };
+
+    // 各自带着自己的系统提示词
+    let reply = ask(aid.to_string(), json!({ "content": "保修多久", "provider_id": pid })).await;
+    assert!(reply.contains("系统提示词开头：你是「售后答疑」") && reply.contains("mock-small"), "{reply}");
+    // 固定了模型的智能体不需要、也不理会对话里选的模型
+    let reply = ask(bid.to_string(), json!({ "content": "截止时间", "provider_id": pid, "model": "mock-small" })).await;
+    assert!(reply.contains("系统提示词开头：你是「招标文件助手」") && reply.contains("mock-large"), "{reply}");
+    let reply = ask(bid.to_string(), json!({ "content": "资质要求" })).await;
+    assert!(reply.contains("mock-large"), "{reply}");
+    // 没固定模型又没选模型：直接报错
+    let cid = req(Method::POST, "/api/conversations").json(json!({ "agent_id": aid })).send(&app).await.json()["id"]
+        .as_str()
+        .unwrap()
+        .to_string();
+    let r = req(Method::POST, &format!("/api/conversations/{cid}/messages"))
+        .json(json!({ "content": "x" }))
+        .send(&app)
+        .await;
+    assert_eq!(r.status, StatusCode::BAD_REQUEST);
+
+    // 对话按智能体分开；列表带使用次数
+    let convs = req(Method::GET, &format!("/api/conversations?agent_id={bid}")).send(&app).await.json();
+    assert_eq!(convs.as_array().unwrap().len(), 2);
+    let list = req(Method::GET, "/api/agents").send(&app).await.json();
+    let b_row = list.as_array().unwrap().iter().find(|x| x["id"] == bid).unwrap();
+    assert_eq!(b_row["conversations"], 2);
+
+    // 改定义后立即生效
+    let r = req(Method::PUT, &format!("/api/agents/{aid}")).json(json!({ "name": "售后二线" })).send(&app).await;
+    assert_eq!(r.status, StatusCode::OK, "{}", r.text);
+    let reply = ask(aid.to_string(), json!({ "content": "在吗", "provider_id": pid })).await;
+    assert!(reply.contains("你是「售后二线」"), "{reply}");
+
+    // 固定的推理服务被删后，退回到对话里选的
+    let other = add_provider(&app, &base, None).await;
+    assert_eq!(req(Method::DELETE, &format!("/api/providers/{pid}")).send(&app).await.status, StatusCode::NO_CONTENT);
+    let reply = ask(bid.to_string(), json!({ "content": "还在吗", "provider_id": other })).await;
+    assert!(reply.contains("mock-small"), "{reply}");
+
+    // 删除智能体连同对话；名称不合法被拒
+    assert_eq!(req(Method::DELETE, &format!("/api/agents/{bid}")).send(&app).await.status, StatusCode::NO_CONTENT);
+    assert_eq!(req(Method::GET, &format!("/api/conversations?agent_id={bid}")).send(&app).await.json(), json!([]));
+    assert_eq!(
+        req(Method::POST, "/api/agents").json(json!({ "name": " " })).send(&app).await.status,
+        StatusCode::BAD_REQUEST
+    );
+    assert_eq!(
+        req(Method::POST, "/api/conversations").json(json!({ "agent_id": bid })).send(&app).await.status,
+        StatusCode::NOT_FOUND
+    );
 }
