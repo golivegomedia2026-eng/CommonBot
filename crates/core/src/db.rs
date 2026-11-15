@@ -141,6 +141,28 @@ CREATE TABLE attachments (
 );
 CREATE INDEX attachments_by_conversation ON attachments(conversation_id, created_at);
 "#,
+    r#"
+-- 发布：独立链接的凭据和 API 密钥；为空表示没发布
+ALTER TABLE agents ADD COLUMN public_token TEXT;
+ALTER TABLE agents ADD COLUMN api_key TEXT;
+CREATE UNIQUE INDEX agents_by_token ON agents(public_token) WHERE public_token IS NOT NULL;
+CREATE UNIQUE INDEX agents_by_key ON agents(api_key) WHERE api_key IS NOT NULL;
+-- 对话从哪里来：owner 主人自己 / link 独立链接的访客 / builder 建造师的访谈
+ALTER TABLE conversations ADD COLUMN origin TEXT NOT NULL DEFAULT 'owner';
+-- 建造师：一个不出现在列表里的内置智能体，访谈记录挂在它名下
+INSERT INTO agents(id, name, description, created_at, updated_at)
+VALUES ('builder', '建造师', '通过对话帮你把一个新的智能体定义清楚。', strftime('%s','now') * 1000, strftime('%s','now') * 1000);
+-- 一次建造：访谈对话 + 整理出的草稿 + 试答结果；发布后记下生成的智能体
+CREATE TABLE builds (
+    id              TEXT PRIMARY KEY,
+    conversation_id TEXT NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+    draft           TEXT NOT NULL DEFAULT '{}',
+    tests           TEXT NOT NULL DEFAULT '[]',
+    agent_id        TEXT,
+    created_at      INTEGER NOT NULL,
+    updated_at      INTEGER NOT NULL
+);
+"#,
 ];
 
 impl Db {

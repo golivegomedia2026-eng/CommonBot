@@ -7,6 +7,8 @@ use crate::{new_id, now_ms, Error, Result};
 
 /// 首次安装时自带的智能体；P0 阶段留下的对话也归到它名下。
 pub const GENERAL_AGENT_ID: &str = "general";
+/// 建造师：内置，不出现在列表里，不能改也不能删。
+pub const BUILDER_AGENT_ID: &str = "builder";
 
 #[derive(Debug, Clone, Serialize)]
 pub struct Agent {
@@ -33,6 +35,9 @@ pub struct Agent {
     pub web: String,
     /// 本机模型连不上时，是否允许改用云端模型。
     pub allow_cloud: bool,
+    /// 独立链接的凭据（出现在链接里）和 API 密钥；都为空表示没发布。
+    pub public_token: Option<String>,
+    pub api_key: Option<String>,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -182,6 +187,8 @@ fn from_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
         folders: serde_json::from_str(&r.get::<_, String>("folders")?).unwrap_or_default(),
         web: r.get("web")?,
         allow_cloud: r.get("allow_cloud")?,
+        public_token: r.get("public_token")?,
+        api_key: r.get("api_key")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -190,7 +197,8 @@ fn from_row(r: &rusqlite::Row) -> rusqlite::Result<Agent> {
 pub fn list(c: &Connection) -> Result<Vec<AgentSummary>> {
     let mut stmt = c.prepare(
         "SELECT a.*, count(v.id) AS conversations, max(v.updated_at) AS last_used_at
-         FROM agents a LEFT JOIN conversations v ON v.agent_id = a.id AND v.title <> ''
+         FROM agents a LEFT JOIN conversations v ON v.agent_id = a.id AND v.title <> '' AND v.origin = 'owner'
+         WHERE a.id <> 'builder'
          GROUP BY a.id ORDER BY coalesce(max(v.updated_at), a.updated_at) DESC, a.id",
     )?;
     let rows = stmt.query_map([], |r| {
@@ -223,6 +231,9 @@ pub fn create(c: &Connection, input: AgentInput) -> Result<Agent> {
 }
 
 pub fn update(c: &Connection, id: &str, input: AgentInput) -> Result<Agent> {
+    if id == BUILDER_AGENT_ID {
+        return Err(Error::NotFound("agent"));
+    }
     let i = input.validated()?;
     let changed = c.execute(
         "UPDATE agents SET name = ?2, description = ?3, duty = ?4, out_of_scope = ?5, instructions = ?6, opening = ?7, examples = ?8, provider_id = ?9, model = ?10, folders = ?11, web = ?12, allow_cloud = ?13, updated_at = ?14 WHERE id = ?1",
@@ -236,6 +247,9 @@ pub fn update(c: &Connection, id: &str, input: AgentInput) -> Result<Agent> {
 
 /// 删除智能体，连同它名下的对话。
 pub fn delete(c: &mut Connection, id: &str) -> Result<()> {
+    if id == BUILDER_AGENT_ID {
+        return Err(Error::NotFound("agent"));
+    }
     let tx = c.transaction()?;
     tx.execute("DELETE FROM conversations WHERE agent_id = ?1", [id])?;
     let n = tx.execute("DELETE FROM agents WHERE id = ?1", [id])?;
@@ -244,6 +258,58 @@ pub fn delete(c: &mut Connection, id: &str) -> Result<()> {
     }
     tx.commit()?;
     Ok(())
+}
+
+fn random_hex(len: usize) -> String {
+    use rand::Rng;
+    let mut rng = rand::rngs::OsRng;
+    (0..len).map(|_| char::from_digit(rng.gen_range(0..16), 16).unwrap_or('0')).collect()
+}
+
+/// 发布：生成独立链接的凭据和 API 密钥。发布出去的智能体没有人替它选模型，所以必须先固定模型。
+/// 已经发布过的保持原来的链接和密钥不变。
+pub fn publish(c: &Connection, id: &str) -> Result<Agent> {
+    let a = get(c, id)?;
+    if id == BUILDER_AGENT_ID {
+        return Err(Error::NotFound("agent"));
+    }
+    if a.model.is_none() {
+        return Err(Error::Invalid("publish_needs_model".into()));
+    }
+    if a.public_token.is_none() {
+        c.execute(
+            "UPDATE agents SET public_token = ?2, api_key = ?3 WHERE id = ?1",
+            params![id, random_hex(32), format!("cb-{}", random_hex(40))],
+        )?;
+    }
+    get(c, id)
+}
+
+/// 取消发布：链接和密钥立即失效。
+pub fn unpublish(c: &Connection, id: &str) -> Result<Agent> {
+    get(c, id)?;
+    c.execute("UPDATE agents SET public_token = NULL, api_key = NULL WHERE id = ?1", [id])?;
+    get(c, id)
+}
+
+/// 换一个 API 密钥（旧的立即失效），链接不变。
+pub fn rotate_key(c: &Connection, id: &str) -> Result<Agent> {
+    let a = get(c, id)?;
+    if a.public_token.is_none() {
+        return Err(Error::Invalid("not_published".into()));
+    }
+    c.execute("UPDATE agents SET api_key = ?2 WHERE id = ?1", params![id, format!("cb-{}", random_hex(40))])?;
+    get(c, id)
+}
+
+pub fn by_token(c: &Connection, token: &str) -> Result<Agent> {
+    c.query_row("SELECT * FROM agents WHERE public_token = ?1", [token], from_row)
+        .optional()?
+        .ok_or(Error::NotFound("agent"))
+}
+
+pub fn by_api_key(c: &Connection, key: &str) -> Result<Agent> {
+    c.query_row("SELECT * FROM agents WHERE api_key = ?1", [key], from_row).optional()?.ok_or(Error::NotFound("agent"))
 }
 
 #[cfg(test)]
@@ -293,8 +359,11 @@ mod tests {
     async fn crud_usage_counts_and_cascade() {
         let db = Db::open_in_memory().unwrap();
         db.run(|c| {
-            // 自带一个通用助手
+            // 自带一个通用助手；内置的建造师不出现在列表里，也不能改、不能删
             assert_eq!(list(c)?.len(), 1);
+            assert!(update(c, BUILDER_AGENT_ID, input("x")).is_err());
+            assert!(delete(c, BUILDER_AGENT_ID).is_err());
+            assert!(get(c, BUILDER_AGENT_ID).is_ok());
             assert_eq!(get(c, GENERAL_AGENT_ID)?.name, "通用助手");
 
             let a = create(c, input("售后答疑"))?;
@@ -316,6 +385,41 @@ mod tests {
             let left: i64 = c.query_row("SELECT count(*) FROM messages", [], |r| r.get(0))?;
             assert_eq!(left, 0);
             assert!(matches!(store::create_conversation(c, &a.id), Err(Error::NotFound(_))));
+            Ok(())
+        })
+        .await
+        .unwrap();
+    }
+
+    #[tokio::test]
+    async fn publishing_needs_a_fixed_model_and_can_be_revoked() {
+        let db = Db::open_in_memory().unwrap();
+        db.run(|c| {
+            let a = create(c, input("售后答疑"))?;
+            assert!(matches!(publish(c, &a.id), Err(Error::Invalid(m)) if m == "publish_needs_model"));
+            let mut with_model = input("售后答疑");
+            with_model.provider_id = Some("p".into());
+            with_model.model = Some("m".into());
+            update(c, &a.id, with_model)?;
+
+            let p = publish(c, &a.id)?;
+            let (token, key) = (p.public_token.clone().unwrap(), p.api_key.clone().unwrap());
+            assert_eq!(token.len(), 32);
+            assert!(key.starts_with("cb-") && key.len() == 43);
+            // 再发布一次不换链接和密钥
+            assert_eq!(publish(c, &a.id)?.public_token.unwrap(), token);
+            assert_eq!(by_token(c, &token)?.id, a.id);
+            assert_eq!(by_api_key(c, &key)?.id, a.id);
+
+            let rotated = rotate_key(c, &a.id)?;
+            assert_ne!(rotated.api_key.clone().unwrap(), key);
+            assert_eq!(rotated.public_token.unwrap(), token);
+            assert!(by_api_key(c, &key).is_err(), "old key stops working");
+
+            unpublish(c, &a.id)?;
+            assert!(by_token(c, &token).is_err());
+            assert!(matches!(rotate_key(c, &a.id), Err(Error::Invalid(_))));
+            assert!(by_token(c, "").is_err() && by_api_key(c, "").is_err());
             Ok(())
         })
         .await

@@ -27,6 +27,9 @@ pub fn api() -> Router<AppState> {
         .route("/agents", get(list_agents).post(create_agent))
         .route("/agents/prompt-preview", post(preview_prompt))
         .route("/agents/{id}", get(get_agent).put(update_agent).delete(delete_agent))
+        .route("/agents/{id}/publish", post(publish_agent).delete(unpublish_agent))
+        .route("/agents/{id}/rotate-key", post(rotate_agent_key))
+        .nest("/public", crate::published::public())
         .route("/conversations", get(list_conversations).post(create_conversation))
         .route("/conversations/{id}", get(get_conversation).patch(rename_conversation).delete(delete_conversation))
         .merge(crate::chat::routes())
@@ -154,6 +157,18 @@ async fn update_agent(
 async fn delete_agent(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<StatusCode> {
     st.db.run(move |c| agent::delete(c, &id)).await?;
     Ok(StatusCode::NO_CONTENT)
+}
+
+async fn publish_agent(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::publish(c, &id)).await?)))
+}
+
+async fn unpublish_agent(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::unpublish(c, &id)).await?)))
+}
+
+async fn rotate_agent_key(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
+    Ok(Json(agent_json(&st.db.run(move |c| agent::rotate_key(c, &id)).await?)))
 }
 
 /// 编辑时预览：按还没保存的定义生成系统提示词。

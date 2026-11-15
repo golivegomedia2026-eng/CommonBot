@@ -62,7 +62,7 @@ struct SendBody {
 
 /// 把保存的消息整理成发给模型的上下文。失败且没有内容的回答不带；
 /// 相邻的同一方消息合并，避免个别模型不接受连续两条用户消息。
-fn history(messages: &[Message]) -> Vec<ChatMessage> {
+pub(crate) fn history(messages: &[Message]) -> Vec<ChatMessage> {
     let mut out: Vec<ChatMessage> = Vec::new();
     for m in messages.iter().filter(|m| !m.content.trim().is_empty()) {
         match out.last_mut() {
@@ -160,16 +160,158 @@ fn event(name: &str, data: Value) -> Event {
     Event::default().event(name).data(data.to_string())
 }
 
-/// 发一句话，回答以事件流返回：
+/// 一轮问答需要的全部输入。
+pub(crate) struct Turn {
+    pub agent: agent::Agent,
+    pub provider: Provider,
+    pub model: String,
+    /// 之前的对话（不含系统提示词），最后一条是这次的提问。
+    pub history: Vec<ChatMessage>,
+    /// 这次的提问（用于联网搜索）。
+    pub question: String,
+    /// 检索用的文字：提问，必要时带上前一句。
+    pub query: String,
+    pub files: Vec<Attachment>,
+    /// 查哪些知识库文件夹；空表示不查。
+    pub folders: Vec<String>,
+    /// `off` / `fallback` / `always`
+    pub web_mode: String,
+}
+
+/// 一轮问答进行中产生的事件。
+pub(crate) enum TurnEvent {
+    /// 这次用到的资料（没有任何资料时不发）。
+    Sources(Value),
+    /// 本机模型连不上，改用了云端模型。
+    Fallback {
+        model: String,
+        provider: String,
+    },
+    Delta(String),
+    Reasoning(String),
+}
+
+/// 一轮问答的结果。
+pub(crate) struct TurnOutcome {
+    pub text: String,
+    pub reasoning: String,
+    pub sources: Value,
+    pub failure: Option<Error>,
+    /// 接收方中途离开（用户点了停止或断开了连接）。
+    pub stopped: bool,
+    pub model: String,
+    pub cloud: bool,
+}
+
+/// 跑一轮问答：查知识库、带上文件、必要时联网，然后让模型回答。事件发到 `tx`；`tx` 的接收方离开即停止。
+pub(crate) async fn run_turn(st: &AppState, turn: Turn, tx: mpsc::Sender<TurnEvent>) -> TurnOutcome {
+    let Turn { agent, provider, model, history, question, query, files, folders, web_mode } = turn;
+    let (mut text, mut reasoning) = (String::new(), String::new());
+    let mut failure: Option<Error> = None;
+    let mut stopped = false;
+
+    let mut material = Material { files: attach::context(&files, &query), ..Default::default() };
+    let (mut semantic, mut kb_note, mut web_note) = (true, None, None);
+
+    let mut kb_weak = true;
+    if !folders.is_empty() {
+        match st.retriever.retrieve(&query, &folders, TOP_K).await {
+            Ok(found) => {
+                kb_weak = found.weak();
+                semantic = found.semantic;
+                kb_note = found.note;
+                material.kb = Some(found.hits);
+            }
+            Err(e) => failure = Some(e),
+        }
+    }
+
+    let (web_settings, cloud) =
+        match st.db.run(|c| Ok((commonbot_core::web::settings(c)?, store::cloud_fallback(c)?))).await {
+            Ok(v) => v,
+            Err(e) => {
+                failure.get_or_insert(e);
+                (Default::default(), None)
+            }
+        };
+    if failure.is_none() && (web_mode == "always" || (web_mode == "fallback" && kb_weak)) {
+        if web_settings.kind == "none" || web_settings.kind.is_empty() {
+            web_note = Some("web_not_configured");
+        } else {
+            // 搜索失败不让整个问答失败：照常回答，并告诉界面这次没联上网
+            match st.web.search(&web_settings, &question, WEB_RESULTS).await {
+                Ok(results) => material.web = Some(results),
+                Err(e) => web_note = Some(e.code()),
+            }
+        }
+    }
+
+    let (extra, sources) = material.render();
+    if !material.is_empty() || web_note.is_some() {
+        let payload = json!({ "sources": sources, "semantic": semantic, "note": kb_note, "web_note": web_note });
+        let _ = tx.send(TurnEvent::Sources(payload)).await;
+    }
+
+    let mut context = vec![ChatMessage { role: "system".into(), content: format!("{}{extra}", agent.system_prompt()) }];
+    context.extend(history);
+
+    // 先用选定的模型；它连不上、且智能体允许时，改用云端后备
+    let mut used: (Provider, String) = (provider, model);
+    if failure.is_none() {
+        let mut stream = st.llm.chat_stream(&endpoint(&used.0), &used.1, &context).await;
+        if let (Err(Error::Unreachable(_)), true, Some(cloud)) =
+            (&stream, agent.allow_cloud, cloud.filter(|p| p.id != used.0.id))
+        {
+            let cloud_model = cloud.default_model.clone().unwrap_or_default();
+            let _ = tx.send(TurnEvent::Fallback { model: cloud_model.clone(), provider: cloud.name.clone() }).await;
+            used = (cloud, cloud_model);
+            stream = st.llm.chat_stream(&endpoint(&used.0), &used.1, &context).await;
+        }
+        match stream {
+            Err(e) => failure = Some(e),
+            Ok(mut stream) => loop {
+                tokio::select! {
+                    _ = tx.closed() => { stopped = true; break; }
+                    item = stream.next() => match item {
+                        None => break,
+                        Some(Ok(Delta::Content(t))) => {
+                            text.push_str(&t);
+                            if tx.send(TurnEvent::Delta(t)).await.is_err() { stopped = true; break; }
+                        }
+                        Some(Ok(Delta::Reasoning(t))) => {
+                            reasoning.push_str(&t);
+                            if tx.send(TurnEvent::Reasoning(t)).await.is_err() { stopped = true; break; }
+                        }
+                        Some(Err(e)) => { failure = Some(e); break; }
+                    }
+                }
+            },
+        }
+    }
+    TurnOutcome { text, reasoning, sources, failure, stopped, model: used.1, cloud: used.0.kind == "cloud" }
+}
+
+/// 发消息时可以带的选项。独立链接的访客不能改这些，全部按智能体的设置。
+#[derive(Default)]
+pub(crate) struct SendOptions {
+    pub provider_id: Option<String>,
+    pub model: Option<String>,
+    pub scope: Option<Vec<String>>,
+    pub web: Option<bool>,
+    pub attachment_ids: Vec<String>,
+}
+
+/// 在一个已有的对话里发一句话，回答以事件流返回：
 /// `user`（已保存的提问、对话、随它发出的文件）→ `sources`（这次用到的资料，没有则不发）
 /// →（必要时）`fallback`（改用云端模型）→ 若干 `reasoning` / `delta` → `done` 或 `error`（都带已保存的回答）。
 /// 浏览器中途断开即视为停止，已生成的部分照样保存。
-async fn send_message(
-    State(st): State<AppState>,
-    Path(id): Path<String>,
-    Json(body): Json<SendBody>,
+pub(crate) async fn send_in_conversation(
+    st: AppState,
+    id: String,
+    content: &str,
+    opts: SendOptions,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
-    let content = body.content.trim().to_string();
+    let content = content.trim().to_string();
     if content.is_empty() || content.chars().count() > MAX_MESSAGE_CHARS {
         return Err(Error::Invalid("content".into()).into());
     }
@@ -190,9 +332,9 @@ async fn send_message(
     let (provider, model) = match (fixed, agent.model.clone()) {
         (Some(provider), Some(model)) => (provider, model),
         _ => {
-            let provider_id = body.provider_id.clone().ok_or_else(|| Error::Invalid("model".into()))?;
+            let provider_id = opts.provider_id.clone().ok_or_else(|| Error::Invalid("model".into()))?;
             let provider = st.db.run(move |c| store::get_provider(c, &provider_id)).await?;
-            let model = body
+            let model = opts
                 .model
                 .clone()
                 .map(|m| m.trim().to_string())
@@ -204,8 +346,8 @@ async fn send_message(
     };
 
     let (conv_id, pid, mdl) = (id.clone(), provider.id.clone(), model.clone());
-    let (scope, web, ids, text) = (body.scope.clone(), body.web, body.attachment_ids.clone(), content.clone());
-    let (user_msg, conversation, messages, files, web_settings, cloud) = st
+    let (scope, web, ids, text) = (opts.scope.clone(), opts.web, opts.attachment_ids.clone(), content.clone());
+    let (user_msg, conversation, messages, files) = st
         .db
         .run(move |c| {
             store::set_scope(c, &conv_id, scope.as_deref())?;
@@ -217,8 +359,6 @@ async fn send_message(
                 store::get_conversation(c, &conv_id)?,
                 store::list_messages(c, &conv_id)?,
                 attach::list(c, &conv_id)?,
-                commonbot_core::web::settings(c)?,
-                store::cloud_fallback(c)?,
             ))
         })
         .await?;
@@ -230,109 +370,57 @@ async fn send_message(
         .send(event("user", json!({ "message": user_msg, "conversation": conversation, "attachments": sent_files })))
         .await;
 
+    // 追问往往很短（「那人为摔坏的呢」），带上前一句一起检索
+    let previous = messages.iter().rev().filter(|m| m.role == "user").nth(1).map(|m| m.content.as_str()).unwrap_or("");
+    let turn = Turn {
+        query: format!("{previous}\n{content}"),
+        question: content,
+        history: history(&messages),
+        files,
+        // 知识库范围取对话里指定的，否则用智能体的默认；联网同理
+        folders: opts.scope.unwrap_or_else(|| agent.folders.clone()),
+        web_mode: match opts.web {
+            Some(true) => "always".into(),
+            Some(false) => "off".into(),
+            None => agent.web.clone(),
+        },
+        agent,
+        provider,
+        model,
+    };
+
     tokio::spawn(async move {
-        let (mut text, mut reasoning) = (String::new(), String::new());
-        let mut failure: Option<Error> = None;
-        let mut stopped = false;
-
-        // 追问往往很短（「那人为摔坏的呢」），带上前一句一起检索
-        let previous =
-            messages.iter().rev().filter(|m| m.role == "user").nth(1).map(|m| m.content.as_str()).unwrap_or("");
-        let query = format!("{previous}\n{content}");
-
-        let mut material = Material { files: attach::context(&files, &query), ..Default::default() };
-        let (mut semantic, mut kb_note, mut web_note) = (true, None, None);
-
-        // 知识库：范围取对话里指定的，否则用智能体的默认；范围为空就不查
-        let folders = body.scope.clone().unwrap_or_else(|| agent.folders.clone());
-        let mut kb_weak = true;
-        if !folders.is_empty() {
-            match st.retriever.retrieve(&query, &folders, TOP_K).await {
-                Ok(found) => {
-                    kb_weak = found.weak();
-                    semantic = found.semantic;
-                    kb_note = found.note;
-                    material.kb = Some(found.hits);
-                }
-                Err(e) => failure = Some(e),
-            }
-        }
-
-        // 联网：对话里的开关优先，否则按智能体的设置
-        let web_mode = match body.web {
-            Some(true) => "always",
-            Some(false) => "off",
-            None => agent.web.as_str(),
+        let (ttx, mut trx) = mpsc::channel::<TurnEvent>(64);
+        let worker = {
+            let st = st.clone();
+            tokio::spawn(async move { run_turn(&st, turn, ttx).await })
         };
-        if failure.is_none() && (web_mode == "always" || (web_mode == "fallback" && kb_weak)) {
-            if web_settings.kind == "none" {
-                web_note = Some("web_not_configured");
-            } else {
-                // 搜索失败不让整个问答失败：照常回答，并告诉界面这次没联上网
-                match st.web.search(&web_settings, &content, WEB_RESULTS).await {
-                    Ok(results) => material.web = Some(results),
-                    Err(e) => web_note = Some(e.code()),
+        while let Some(ev) = trx.recv().await {
+            let e = match ev {
+                TurnEvent::Sources(payload) => event("sources", payload),
+                TurnEvent::Fallback { model, provider } => {
+                    event("fallback", json!({ "model": model, "provider": provider }))
                 }
+                TurnEvent::Delta(t) => event("delta", json!({ "text": t })),
+                TurnEvent::Reasoning(t) => event("reasoning", json!({ "text": t })),
+            };
+            if tx.send(e).await.is_err() {
+                break; // 浏览器走了；丢掉接收端，让这一轮停下来
             }
         }
+        drop(trx);
+        let Ok(out) = worker.await else { return };
 
-        let (extra, sources) = material.render();
-        if !material.is_empty() || web_note.is_some() {
-            let _ = tx
-                .send(event(
-                    "sources",
-                    json!({ "sources": sources, "semantic": semantic, "note": kb_note, "web_note": web_note }),
-                ))
-                .await;
-        }
-
-        let mut context =
-            vec![ChatMessage { role: "system".into(), content: format!("{}{extra}", agent.system_prompt()) }];
-        context.extend(history(&messages));
-
-        // 先用选定的模型；它连不上、且智能体允许时，改用云端后备
-        let mut used: (Provider, String) = (provider, model);
-        if failure.is_none() {
-            let mut stream = st.llm.chat_stream(&endpoint(&used.0), &used.1, &context).await;
-            if let (Err(Error::Unreachable(_)), true, Some(cloud)) =
-                (&stream, agent.allow_cloud, cloud.filter(|p| p.id != used.0.id))
-            {
-                let cloud_model = cloud.default_model.clone().unwrap_or_default();
-                let _ = tx.send(event("fallback", json!({ "model": cloud_model, "provider": cloud.name }))).await;
-                used = (cloud, cloud_model);
-                stream = st.llm.chat_stream(&endpoint(&used.0), &used.1, &context).await;
-            }
-            match stream {
-                Err(e) => failure = Some(e),
-                Ok(mut stream) => loop {
-                    tokio::select! {
-                        _ = tx.closed() => { stopped = true; break; }
-                        item = stream.next() => match item {
-                            None => break,
-                            Some(Ok(Delta::Content(t))) => {
-                                text.push_str(&t);
-                                if tx.send(event("delta", json!({ "text": t }))).await.is_err() { stopped = true; break; }
-                            }
-                            Some(Ok(Delta::Reasoning(t))) => {
-                                reasoning.push_str(&t);
-                                if tx.send(event("reasoning", json!({ "text": t }))).await.is_err() { stopped = true; break; }
-                            }
-                            Some(Err(e)) => { failure = Some(e); break; }
-                        }
-                    }
-                },
-            }
-        }
-
-        let status = if failure.is_some() {
+        let status = if out.failure.is_some() {
             "error"
-        } else if stopped {
+        } else if out.stopped {
             "stopped"
         } else {
             "ok"
         };
-        let code = failure.as_ref().map(|e| e.code());
-        let (model_name, cloud_used) = (used.1.clone(), used.0.kind == "cloud");
+        let code = out.failure.as_ref().map(|e| e.code());
+        let (text, reasoning, sources, model_name, cloud_used) =
+            (out.text, out.reasoning, out.sources, out.model, out.cloud);
         let saved = st
             .db
             .run(move |c| {
@@ -348,7 +436,7 @@ async fn send_message(
                 store::add_assistant_message(c, &id, &reply)
             })
             .await;
-        let last = match (saved, failure) {
+        let last = match (saved, out.failure) {
             (Ok(message), None) => event("done", json!({ "message": message })),
             (Ok(message), Some(e)) => {
                 event("error", json!({ "code": e.code(), "detail": e.to_string(), "message": message }))
@@ -362,6 +450,33 @@ async fn send_message(
     });
 
     Ok(Sse::new(ReceiverStream::new(rx).map(Ok)).keep_alive(KeepAlive::default()))
+}
+
+/// 主人在自己的对话里发消息。
+async fn send_message(
+    State(st): State<AppState>,
+    Path(id): Path<String>,
+    Json(body): Json<SendBody>,
+) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
+    let opts = SendOptions {
+        provider_id: body.provider_id,
+        model: body.model,
+        scope: body.scope,
+        web: body.web,
+        attachment_ids: body.attachment_ids,
+    };
+    owner_conversation(&st, &id).await?;
+    send_in_conversation(st, id, &body.content, opts).await
+}
+
+/// 主人的接口只处理主人自己的对话；访客通过链接建的对话不在此列。
+pub(crate) async fn owner_conversation(st: &AppState, id: &str) -> ApiResult<()> {
+    let cid = id.to_string();
+    let conv = st.db.run(move |c| store::get_conversation(c, &cid)).await?;
+    if conv.origin == "link" {
+        return Err(Error::NotFound("conversation").into());
+    }
+    Ok(())
 }
 
 /// 上传对话里要用的文件：读出文字后保存，等下一条消息带上。读不了的逐个说明原因。

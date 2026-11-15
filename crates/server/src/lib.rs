@@ -3,6 +3,7 @@
 mod access;
 mod assets;
 mod chat;
+mod published;
 mod routes;
 mod routes_kb;
 
@@ -69,6 +70,7 @@ impl AppState {
 pub fn app(state: AppState) -> Router {
     Router::new()
         .nest("/api", routes::api())
+        .nest("/v1", published::openai())
         .fallback(assets::serve)
         .layer(middleware::from_fn_with_state(state.clone(), access::guard))
         .with_state(state)

@@ -196,6 +196,8 @@ pub struct Conversation {
     pub scope: Option<Vec<String>>,
     /// 这个对话临时指定是否联网；`None` 表示按智能体的默认。
     pub web: Option<bool>,
+    /// 对话从哪里来：`owner` / `link` / `builder`。
+    pub origin: String,
     pub created_at: i64,
     pub updated_at: i64,
 }
@@ -226,6 +228,7 @@ fn conversation_from_row(r: &rusqlite::Row) -> rusqlite::Result<Conversation> {
         model: r.get("model")?,
         scope: r.get::<_, Option<String>>("scope")?.and_then(|s| serde_json::from_str(&s).ok()),
         web: r.get::<_, Option<String>>("web")?.map(|w| w == "on"),
+        origin: r.get("origin")?,
         created_at: r.get("created_at")?,
         updated_at: r.get("updated_at")?,
     })
@@ -248,11 +251,16 @@ fn message_from_row(r: &rusqlite::Row) -> rusqlite::Result<Message> {
 }
 
 pub fn create_conversation(c: &Connection, agent_id: &str) -> Result<Conversation> {
+    create_conversation_from(c, agent_id, "owner")
+}
+
+/// 新建对话并记下来源（`owner` / `link` / `builder`）。
+pub fn create_conversation_from(c: &Connection, agent_id: &str, origin: &str) -> Result<Conversation> {
     crate::agent::get(c, agent_id)?;
     let (id, now) = (new_id(), now_ms());
     c.execute(
-        "INSERT INTO conversations(id, agent_id, created_at, updated_at) VALUES (?1, ?2, ?3, ?3)",
-        params![id, agent_id, now],
+        "INSERT INTO conversations(id, agent_id, origin, created_at, updated_at) VALUES (?1, ?2, ?3, ?4, ?4)",
+        params![id, agent_id, origin, now],
     )?;
     get_conversation(c, &id)
 }
@@ -265,8 +273,9 @@ pub fn get_conversation(c: &Connection, id: &str) -> Result<Conversation> {
 
 /// 某个智能体名下的对话，最近用过的在前。
 pub fn list_conversations(c: &Connection, agent_id: &str) -> Result<Vec<Conversation>> {
-    let mut stmt =
-        c.prepare("SELECT * FROM conversations WHERE agent_id = ?1 ORDER BY updated_at DESC, id LIMIT 500")?;
+    let mut stmt = c.prepare(
+        "SELECT * FROM conversations WHERE agent_id = ?1 AND origin = 'owner' ORDER BY updated_at DESC, id LIMIT 500",
+    )?;
     let rows = stmt.query_map([agent_id], conversation_from_row)?;
     Ok(rows.collect::<rusqlite::Result<_>>()?)
 }

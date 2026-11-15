@@ -191,6 +191,21 @@ impl LlmClient {
         Ok(items.into_iter().map(|(_, v)| normalize(v)).collect())
     }
 
+    /// 一次性取回完整回答（不流式）。用于整理定义、出题、评判这类后台步骤。
+    pub async fn complete(&self, ep: &Endpoint, model: &str, messages: &[ChatMessage]) -> Result<String> {
+        let body = serde_json::json!({ "model": model, "messages": messages, "stream": false });
+        let resp = self
+            .request(reqwest::Method::POST, ep, "/chat/completions")
+            .timeout(Duration::from_secs(600))
+            .json(&body)
+            .send()
+            .await
+            .map_err(unreachable)?;
+        let resp = check_status(resp).await?;
+        let body: Value = resp.json().await.map_err(|e| Error::Upstream { status: 200, message: e.to_string() })?;
+        Ok(strip_think(body["choices"][0]["message"]["content"].as_str().unwrap_or("")))
+    }
+
     /// 让看图模型把图片里的文字转写出来（用于扫描件）。
     pub async fn ocr_image(&self, ep: &Endpoint, model: &str, png: &[u8]) -> Result<String> {
         use base64::Engine as _;
@@ -219,6 +234,25 @@ impl LlmClient {
 }
 
 const OCR_PROMPT: &str = "把这张图片里的全部文字按阅读顺序原样转写出来。表格按行输出，单元格之间用 | 分隔。只输出图片里的文字本身，不要解释、不要总结、不要补充图片里没有的内容。图片里没有文字时输出空。";
+
+/// 从模型的回答里取出 JSON。模型常在前后加说明文字或代码块标记，这里只取最外层的一对括号。
+pub fn extract_json(text: &str) -> Option<Value> {
+    let text = strip_think(text);
+    for (open, close) in [('{', '}'), ('[', ']')] {
+        let (Some(start), Some(end)) = (text.find(open), text.rfind(close)) else { continue };
+        // 取先出现的那种括号
+        let other = if open == '{' { '[' } else { '{' };
+        if text.find(other).is_some_and(|o| o < start) && open == '{' {
+            continue;
+        }
+        if end > start {
+            if let Ok(v) = serde_json::from_str(&text[start..=end]) {
+                return Some(v);
+            }
+        }
+    }
+    None
+}
 
 pub fn normalize(mut v: Vec<f32>) -> Vec<f32> {
     let norm = v.iter().map(|x| x * x).sum::<f32>().sqrt();
@@ -367,6 +401,19 @@ mod tests {
         let v = normalize(vec![3.0, 4.0]);
         assert!((v[0] - 0.6).abs() < 1e-6 && (v[1] - 0.8).abs() < 1e-6);
         assert_eq!(normalize(vec![0.0, 0.0]), vec![0.0, 0.0]);
+    }
+
+    #[test]
+    fn finds_json_inside_chatter() {
+        let v = extract_json(
+            "好的，整理如下：\n```json\n{\"name\": \"招标助手\", \"examples\": [\"截止时间？\"]}\n```\n希望有帮助",
+        )
+        .unwrap();
+        assert_eq!(v["name"], "招标助手");
+        let list = extract_json("<think>想想</think>[{\"question\": \"q\"}] 以上").unwrap();
+        assert_eq!(list[0]["question"], "q");
+        assert!(extract_json("没有 JSON").is_none());
+        assert!(extract_json("{坏的}").is_none());
     }
 
     #[test]

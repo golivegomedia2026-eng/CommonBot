@@ -108,7 +108,12 @@ pub async fn guard(State(st): State<AppState>, mut req: Request, next: Next) -> 
     };
 
     let path = req.uri().path();
-    let open = !path.starts_with("/api/") || path == "/api/health" || path == "/api/access";
+    // 不需要访问码的部分：界面文件、健康检查、输入访问码；
+    // 发布出去的智能体走自己的凭据（链接里的令牌、API 密钥），由各自的接口校验
+    let open = !path.starts_with("/api/")
+        || path == "/api/health"
+        || path == "/api/access"
+        || path.starts_with("/api/public/");
     if !open && !authed {
         return ApiError::new(StatusCode::UNAUTHORIZED, "access_required", "access code required").into_response();
     }
