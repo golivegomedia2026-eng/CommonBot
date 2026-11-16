@@ -26,6 +26,9 @@ pub fn api() -> Router<AppState> {
         .route("/update/check", post(update_check))
         .route("/update/auto", axum::routing::put(update_auto))
         .route("/system", get(system_info))
+        .route("/compute", get(compute_status))
+        .route("/compute/download", post(compute_download))
+        .route("/compute/cancel", post(compute_cancel))
         .route("/system/lan", axum::routing::put(set_lan))
         .route("/settings/web", get(get_web).put(put_web))
         .route("/settings/web/test", post(test_web))
@@ -119,11 +122,51 @@ fn lan_addresses() -> Vec<String> {
 /// 本机算力的状态，以及算力包里各个模型的用场。
 fn compute_json(st: &AppState) -> Value {
     let mut v = serde_json::to_value(st.compute.state()).unwrap_or_default();
-    if let Some(pack) = &st.compute.pack {
-        v["models"] = json!(pack.info);
-        v["dir"] = json!(pack.dir.display().to_string());
+    match st.compute.pack() {
+        Some(pack) => {
+            v["models"] = json!(pack.info);
+            v["dir"] = json!(pack.dir.display().to_string());
+        }
+        // 还没有算力包：可以在界面里直接下载
+        None => {
+            v["can_download"] = json!(st.compute.sources.runtime_url.is_some());
+            v["catalog"] = crate::compute_get::catalog();
+            v["download"] = json!(st.compute.progress());
+            // 上次下到一半：界面上显示「继续下载」
+            v["partial"] = json!(st.compute.data_dir.join("compute/models").is_dir());
+        }
     }
     v
+}
+
+async fn compute_status(State(st): State<AppState>) -> Json<Value> {
+    Json(compute_json(&st))
+}
+
+#[derive(Deserialize)]
+struct ComputeDownloadBody {
+    /// 要下载哪几个用途的模型：chat / extra / embed / vision。
+    roles: Vec<String>,
+}
+
+/// 下载推理运行时和选中的模型，下完自动启用。只能在运行服务的这台机器上操作。
+async fn compute_download(
+    State(st): State<AppState>,
+    Extension(caller): Extension<Caller>,
+    Json(body): Json<ComputeDownloadBody>,
+) -> ApiResult<Json<Value>> {
+    require_local(caller)?;
+    st.compute
+        .start_download(st.db.clone(), &body.roles)
+        .await
+        .map_err(|f| ApiError::new(StatusCode::CONFLICT, f.code, f.detail))?;
+    Ok(Json(compute_json(&st)))
+}
+
+async fn compute_cancel(State(st): State<AppState>, Extension(caller): Extension<Caller>) -> ApiResult<Json<Value>> {
+    require_local(caller)?;
+    st.compute.cancel_download();
+    Ok(Json(compute_json(&st)))
 }
 
 async fn system_info(State(st): State<AppState>) -> Json<Value> {

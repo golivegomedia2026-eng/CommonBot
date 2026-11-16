@@ -3,12 +3,15 @@
 
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
+use std::sync::atomic::AtomicBool;
 use std::sync::{Arc, Mutex, RwLock};
 use std::time::Duration;
 
 use commonbot_core::store::ProviderInput;
 use commonbot_core::{kb, store, Db};
 use serde::{Deserialize, Serialize};
+
+use crate::compute_get::{Progress, Sources};
 
 /// 算力包里的说明：各个模型派什么用。
 #[derive(Debug, Clone, Default, Serialize, Deserialize)]
@@ -69,7 +72,14 @@ pub enum State {
 }
 
 pub struct Compute {
-    pub pack: Option<Pack>,
+    pack: RwLock<Option<Pack>>,
+    /// 数据目录：在界面里下载的算力包放在它下面的 compute 文件夹。
+    pub(crate) data_dir: PathBuf,
+    /// 下载运行时和模型的来源。
+    pub(crate) sources: Sources,
+    /// 在界面里下载算力包的进度。
+    pub(crate) progress: Mutex<Progress>,
+    pub(crate) cancel: AtomicBool,
     /// 推理服务监听的端口。
     pub port: u16,
     state: RwLock<State>,
@@ -79,13 +89,29 @@ pub struct Compute {
 
 impl Compute {
     pub fn new(pack: Option<Pack>, port: u16, data_dir: &Path) -> Arc<Self> {
+        Self::with_sources(pack, port, data_dir, Sources::from_env())
+    }
+
+    pub fn with_sources(pack: Option<Pack>, port: u16, data_dir: &Path, sources: Sources) -> Arc<Self> {
         Arc::new(Self {
-            pack,
+            pack: RwLock::new(pack),
+            data_dir: data_dir.to_path_buf(),
+            sources,
+            progress: Mutex::default(),
+            cancel: AtomicBool::new(false),
             port,
             state: RwLock::new(State::None),
             child: Mutex::new(None),
             log: data_dir.join("logs/compute.log"),
         })
+    }
+
+    pub fn pack(&self) -> Option<Pack> {
+        self.pack.read().unwrap_or_else(|p| p.into_inner()).clone()
+    }
+
+    pub(crate) fn set_pack(&self, pack: Pack) {
+        *self.pack.write().unwrap_or_else(|p| p.into_inner()) = Some(pack);
     }
 
     pub fn state(&self) -> State {
@@ -100,7 +126,7 @@ impl Compute {
         format!("http://127.0.0.1:{}/v1", self.port)
     }
 
-    async fn answering(&self) -> bool {
+    pub(crate) async fn answering(&self) -> bool {
         let Ok(client) = reqwest::Client::builder().timeout(Duration::from_secs(3)).build() else { return false };
         client.get(format!("{}/models", self.base_url())).send().await.is_ok_and(|r| r.status().is_success())
     }
@@ -128,7 +154,7 @@ impl Compute {
     pub fn spawn(self: &Arc<Self>, db: Db) {
         let me = self.clone();
         tokio::spawn(async move {
-            let Some(pack) = me.pack.clone() else { return };
+            let Some(pack) = me.pack() else { return };
             if me.answering().await {
                 me.set(State::External);
                 return;

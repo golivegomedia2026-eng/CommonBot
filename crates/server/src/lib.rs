@@ -5,6 +5,7 @@ mod assets;
 mod builder;
 mod chat;
 pub mod compute;
+pub mod compute_get;
 mod published;
 mod routes;
 mod routes_kb;

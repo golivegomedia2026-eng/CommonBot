@@ -40,6 +40,16 @@ Three kinds of model are useful:
 | Embedding model | Lets the knowledge base search by meaning, e.g. bge-m3 | Keyword search only |
 | Vision model | Reads text in scans and images | Scans and images can't be read |
 
+### Easiest: one-click download in the interface
+
+If the machine has internet access and no inference service yet, open the Models page. At the top is "Local compute: one-click download": tick the models you want and click "Download and turn on". CommonBot downloads the inference runtime and the models, shows progress, then starts the runtime and assigns the chat, embedding and vision models.
+
+- The four default models are about 35 GB in total (chosen for 48 GB of memory), plus the runtime. Untick what you do not need.
+- You can pause at any time. A dropped connection or a shutdown is fine too: click "Continue download" later and it picks up where it stopped. Every file is verified after download.
+- The download is kept in `compute` in the data folder (see section 9).
+- This can only be done on the machine that runs CommonBot.
+- To use other models, set the environment variable `COMMONBOT_COMPUTE_MODELS` before starting, for example `chat=qwen3:8b,embed=bge-m3`.
+
 ### Compute pack: the inference service and models, installed offline
 
 If you would rather not install Ollama and pull models yourself, use a compute pack: a folder named `compute` holding the inference runtime and a chosen set of models. When CommonBot starts and finds it, it starts the runtime itself and assigns the chat, embedding and vision models. No network and no further setup are needed.

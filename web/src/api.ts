@@ -225,6 +225,11 @@ export interface ComputeInfo {
   detail?: string;
   dir?: string;
   models?: { chat: string; extra: string[]; embed: string; vision: string };
+  /** 没有算力包时：能否在界面里下载、可选的模型、下载进度。 */
+  can_download?: boolean;
+  partial?: boolean;
+  catalog?: { role: "chat" | "extra" | "embed" | "vision"; model: string; gb: number }[];
+  download?: { status: "idle" | "running" | "failed"; step: string; item: string; done: number; total: number; error: string | null; detail: string | null };
 }
 
 export const api = {
@@ -233,6 +238,9 @@ export const api = {
   checkUpdate: () => call<UpdateStatus>("POST", "/update/check"),
   setAutoUpdate: (enabled: boolean) => call<UpdateStatus>("PUT", "/update/auto", { enabled }),
   system: () => call<{ version: string; lan: boolean; lan_fixed: boolean; port: number; addresses: string[]; compute: ComputeInfo }>("GET", "/system"),
+  compute: () => call<ComputeInfo>("GET", "/compute"),
+  computeDownload: (roles: string[]) => call<ComputeInfo>("POST", "/compute/download", { roles }),
+  computeCancel: () => call<ComputeInfo>("POST", "/compute/cancel"),
   setLan: (enabled: boolean) => call<{ lan: boolean }>("PUT", "/system/lan", { enabled }),
   enterAccessCode: (code: string) => call<{ ok: boolean }>("POST", "/access", { code }),
   accessCode: () => call<{ code: string; listen: string }>("GET", "/access-code"),

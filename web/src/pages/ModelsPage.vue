@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, reactive, ref } from "vue";
+import { computed, onMounted, onUnmounted, reactive, ref } from "vue";
 import { useI18n } from "vue-i18n";
 
 import { api, kb, type ComputeInfo, type ModelRef, type Provider, type ProviderInput } from "../api";
@@ -20,17 +20,49 @@ onMounted(() => loadProviders().catch((e) => (error.value = errorText(e))));
 
 // 本机算力包：启动中时隔一会儿再看，起来后刷新推理服务列表
 const compute = ref<ComputeInfo | null>(null);
+const computeError = ref("");
+/** 勾选要下载的模型；默认全选 */
+const picked = reactive<Record<string, boolean>>({ chat: true, extra: true, embed: true, vision: true });
+let computeTimer = 0;
+const busy = (c: ComputeInfo | null) => c?.state === "starting" || c?.download?.status === "running";
 async function loadCompute() {
   try {
-    const before = compute.value?.state;
-    compute.value = (await api.system()).compute;
-    if (compute.value.state === "starting") setTimeout(loadCompute, 2000);
-    else if (before === "starting") await loadProviders();
+    const was = compute.value;
+    compute.value = await api.compute();
+    window.clearTimeout(computeTimer);
+    if (busy(compute.value)) computeTimer = window.setTimeout(loadCompute, 1500);
+    // 刚启动好：模型已经自动配好，把列表和下面的选择刷新出来
+    else if (busy(was)) await Promise.all([loadProviders(), loadKb()]);
   } catch {
     // 看不到状态不影响其他设置
   }
 }
 onMounted(loadCompute);
+onUnmounted(() => window.clearTimeout(computeTimer));
+const pickedGb = computed(() => (compute.value?.catalog ?? []).filter((m) => picked[m.role]).reduce((n, m) => n + m.gb, 0));
+const anyPicked = computed(() => (compute.value?.catalog ?? []).some((m) => picked[m.role]));
+const gb = (n: number) => (n / 2 ** 30).toFixed(n < 2 ** 30 ? 2 : 1);
+const percent = computed(() => {
+  const d = compute.value?.download;
+  return d && d.total ? Math.min(100, Math.floor((d.done / d.total) * 100)) : 0;
+});
+async function startDownload() {
+  computeError.value = "";
+  try {
+    compute.value = await api.computeDownload(Object.keys(picked).filter((r) => picked[r]));
+    loadCompute();
+  } catch (e) {
+    computeError.value = errorText(e);
+  }
+}
+async function cancelDownload() {
+  try {
+    await api.computeCancel();
+    loadCompute();
+  } catch (e) {
+    computeError.value = errorText(e);
+  }
+}
 
 // 知识库用的两个模型
 const options = computed(modelOptions);
@@ -38,14 +70,15 @@ const kbPick = reactive({ embed: "", ocr: "" });
 const kbSaved = ref(false);
 const key = (m: ModelRef | null) => (m ? `${m.provider_id}\n${m.model}` : "");
 const unkey = (v: string): ModelRef | null => (v ? { provider_id: v.split("\n")[0], model: v.split("\n")[1] } : null);
-onMounted(async () => {
+async function loadKb() {
   try {
     const s = await kb.settings();
     Object.assign(kbPick, { embed: key(s.embed), ocr: key(s.ocr) });
   } catch (e) {
     error.value = errorText(e);
   }
-});
+}
+onMounted(loadKb);
 async function saveKb() {
   kbSaved.value = false;
   try {
@@ -150,6 +183,41 @@ async function remove(id: string) {
   </header>
   <p class="muted">{{ $t("models.subtitle") }}</p>
   <div v-if="error" class="alert err" role="alert">{{ error }}</div>
+
+  <div v-if="compute && compute.state === 'none' && compute.can_download && compute.download" class="card form" data-test="compute-get">
+    <div>
+      <h2>{{ $t("compute.getTitle") }}</h2>
+      <p class="muted" style="margin-top: 4px">{{ $t("compute.getHint") }}</p>
+    </div>
+    <template v-if="compute.download.status === 'running'">
+      <div>
+        <div class="row" style="gap: 10px">
+          <div class="bar grow" style="height: 8px; margin: 0" role="progressbar" :aria-valuenow="percent" aria-valuemin="0" aria-valuemax="100"><i :style="{ width: percent + '%' }"></i></div>
+          <strong>{{ percent }}%</strong>
+        </div>
+        <p class="muted" style="margin-top: 6px">
+          {{ $t(`compute.step.${compute.download.step || "prepare"}`, { item: compute.download.item }) }}
+          <template v-if="compute.download.total"> · {{ gb(compute.download.done) }} / {{ gb(compute.download.total) }} GB</template>
+        </p>
+      </div>
+      <div class="row"><button class="btn ghost sm" type="button" @click="cancelDownload">{{ $t("compute.pause") }}</button><span class="muted">{{ $t("compute.pauseHint") }}</span></div>
+    </template>
+    <template v-else>
+      <label v-for="m in compute.catalog" :key="m.role" class="row" style="gap: 8px">
+        <input v-model="picked[m.role]" type="checkbox" />
+        <span class="grow">{{ $t(`compute.role.${m.role}`) }} <span class="muted mono">{{ m.model }}</span></span>
+        <span v-if="m.gb" class="muted">{{ $t("compute.about", { n: m.gb }) }}</span>
+      </label>
+      <div v-if="compute.download.status === 'failed'" class="alert err" role="alert">
+        {{ $t(`compute.err.${compute.download.error}`, { detail: compute.download.detail }) }}
+      </div>
+      <div v-if="computeError" class="alert err" role="alert">{{ computeError }}</div>
+      <div class="row">
+        <button class="btn primary" type="button" :disabled="!anyPicked" @click="startDownload"><Icon name="download" />{{ $t(compute.partial ? "compute.resume" : "compute.get") }}</button>
+        <span v-if="pickedGb" class="muted">{{ $t("compute.total", { n: pickedGb.toFixed(1) }) }}</span>
+      </div>
+    </template>
+  </div>
 
   <div v-if="compute && compute.state !== 'none'" class="card" data-test="compute">
     <div class="row">

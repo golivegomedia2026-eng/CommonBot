@@ -1469,14 +1469,9 @@ async fn upgrade_is_required_only_on_a_verified_policy() {
 
 // ---------- 本机算力 ----------
 
-/// 做一个假的算力包：运行时是一个脚本，在指定端口上应答模型列表（代替真正的 Ollama）。
+/// 代替真正的 Ollama：在指定端口上应答模型列表，并记下自己的进程号。
 #[cfg(unix)]
-fn fake_pack(dir: &std::path::Path) -> commonbot_server::compute::Pack {
-    use std::os::unix::fs::PermissionsExt;
-    let bin = dir.join("compute/runtime/bin");
-    std::fs::create_dir_all(&bin).unwrap();
-    std::fs::create_dir_all(dir.join("compute/models")).unwrap();
-    let script = r#"#!/bin/sh
+const FAKE_RUNTIME: &str = r#"#!/bin/sh
 [ "$1" = serve ] || exit 2
 [ -d "$OLLAMA_MODELS" ] || exit 3
 echo $$ > "$OLLAMA_MODELS/pid"
@@ -1491,6 +1486,15 @@ class H(BaseHTTPRequestHandler):
 HTTPServer(("127.0.0.1", int(sys.argv[1])), H).serve_forever()
 ' "${OLLAMA_HOST##*:}"
 "#;
+
+/// 做一个假的算力包：运行时是一个脚本，在指定端口上应答模型列表（代替真正的 Ollama）。
+#[cfg(unix)]
+fn fake_pack(dir: &std::path::Path) -> commonbot_server::compute::Pack {
+    use std::os::unix::fs::PermissionsExt;
+    let bin = dir.join("compute/runtime/bin");
+    std::fs::create_dir_all(&bin).unwrap();
+    std::fs::create_dir_all(dir.join("compute/models")).unwrap();
+    let script = FAKE_RUNTIME;
     std::fs::write(bin.join("ollama"), script).unwrap();
     std::fs::set_permissions(bin.join("ollama"), std::fs::Permissions::from_mode(0o755)).unwrap();
     std::fs::write(dir.join("compute/pack.json"), json!({ "format": 1, "platform": "test", "built": "2026-01-01T00:00:00Z", "chat": "pack-chat", "extra": [], "embed": "pack-embed", "vision": "" }).to_string()).unwrap();
@@ -1590,4 +1594,217 @@ async fn an_inference_service_already_on_the_port_is_used_as_is() {
     compute.spawn(Db::open_in_memory().unwrap());
     tokio::time::sleep(std::time::Duration::from_millis(500)).await;
     assert!(matches!(compute.state(), State::Failed { .. }), "{:?}", compute.state());
+}
+
+/// 假的下载源：运行时压缩包、模型清单、模型文件；支持断点续传，并记下收到的续传请求。
+#[cfg(unix)]
+mod fake_source {
+    use std::collections::HashMap;
+    use std::sync::{Arc, Mutex};
+
+    use axum::extract::{Path, State};
+    use axum::http::{header, HeaderMap, StatusCode};
+    use axum::response::{IntoResponse, Response};
+    use axum::routing::get;
+    use sha2::{Digest, Sha256};
+
+    #[derive(Clone, Default)]
+    pub struct Source {
+        pub blobs: Arc<HashMap<String, Vec<u8>>>,
+        pub runtime: Arc<Vec<u8>>,
+        pub ranges: Arc<Mutex<Vec<String>>>,
+    }
+
+    pub fn hex(bytes: &[u8]) -> String {
+        Sha256::digest(bytes).iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    fn ranged(st: &Source, headers: &HeaderMap, body: &[u8]) -> Response {
+        let from = headers.get(header::RANGE).and_then(|v| v.to_str().ok()).map(|v| {
+            st.ranges.lock().unwrap().push(v.to_string());
+            v.trim_start_matches("bytes=").trim_end_matches('-').parse::<usize>().unwrap()
+        });
+        match from {
+            Some(n) if n >= body.len() => StatusCode::RANGE_NOT_SATISFIABLE.into_response(),
+            Some(n) => (StatusCode::PARTIAL_CONTENT, body[n..].to_vec()).into_response(),
+            None => body.to_vec().into_response(),
+        }
+    }
+
+    /// 清单：对话模型一个大文件，向量化模型另一个；配置文件两者共用。看图模型的清单指向一个内容对不上的文件。
+    async fn manifest(State(st): State<Source>, Path((name, _tag)): Path<(String, String)>) -> Response {
+        let layer = match name.as_str() {
+            "qwen3" => "weights-chat",
+            "bge-m3" => "weights-embed",
+            "qwen2.5vl" => "corrupt",
+            _ => return StatusCode::NOT_FOUND.into_response(),
+        };
+        let entry = |key: &str| {
+            // 「corrupt」的清单写的是别的内容的校验值
+            let digest = if key == "corrupt" { hex(b"what it should have been") } else { hex(&st.blobs[key]) };
+            serde_json::json!({ "digest": format!("sha256:{digest}"), "size": st.blobs[key].len() })
+        };
+        serde_json::json!({ "schemaVersion": 2, "config": entry("config"), "layers": [entry(layer)] })
+            .to_string()
+            .into_response()
+    }
+
+    async fn blob(
+        State(st): State<Source>,
+        Path((_name, digest)): Path<(String, String)>,
+        headers: HeaderMap,
+    ) -> Response {
+        let want = digest.trim_start_matches("sha256:");
+        let found = st.blobs.iter().find(|(k, v)| {
+            if *k == "corrupt" {
+                want == hex(b"what it should have been")
+            } else {
+                hex(v) == want
+            }
+        });
+        match found {
+            Some((_, body)) => ranged(&st, &headers, body),
+            None => StatusCode::NOT_FOUND.into_response(),
+        }
+    }
+
+    async fn runtime(State(st): State<Source>, headers: HeaderMap) -> Response {
+        ranged(&st, &headers, &st.runtime)
+    }
+
+    /// 启动假下载源，返回它的地址。
+    pub async fn spawn(script: &str) -> (String, Source) {
+        // 运行时压缩包：bin/ollama 是那个替身脚本
+        let mut tar = tar::Builder::new(flate2::write::GzEncoder::new(Vec::new(), flate2::Compression::fast()));
+        let mut head = tar::Header::new_gnu();
+        head.set_size(script.len() as u64);
+        head.set_mode(0o755);
+        head.set_cksum();
+        tar.append_data(&mut head, "bin/ollama", script.as_bytes()).unwrap();
+        let archive = tar.into_inner().unwrap().finish().unwrap();
+        let bytes =
+            |seed: u8, n: usize| (0..n).map(|i| (i as u8).wrapping_mul(31).wrapping_add(seed)).collect::<Vec<u8>>();
+        let blobs = HashMap::from([
+            ("weights-chat".to_string(), bytes(1, 300_000)),
+            ("weights-embed".to_string(), bytes(2, 50_000)),
+            ("config".to_string(), br#"{"model_format":"gguf"}"#.to_vec()),
+            ("corrupt".to_string(), bytes(3, 10_000)),
+        ]);
+        let st = Source { blobs: Arc::new(blobs), runtime: Arc::new(archive), ranges: Arc::default() };
+        let app = axum::Router::new()
+            .route("/rt/ollama.tgz", get(runtime))
+            .route("/v2/library/{name}/manifests/{tag}", get(manifest))
+            .route("/v2/library/{name}/blobs/{digest}", get(blob))
+            .with_state(st.clone());
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        tokio::spawn(async move { axum::serve(listener, app).await.unwrap() });
+        (base, st)
+    }
+}
+
+#[cfg(unix)]
+#[tokio::test]
+async fn compute_is_downloaded_from_the_interface_resumed_verified_and_started() {
+    use commonbot_server::compute::{Compute, State};
+    use commonbot_server::compute_get::Sources;
+    let (base, source) = fake_source::spawn(FAKE_RUNTIME).await;
+    let sources = Sources { registry: base.clone(), runtime_url: Some(format!("{base}/rt/ollama.tgz")) };
+    let dir = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let db = Db::open_in_memory().unwrap();
+    let mut state = AppState::new(db.clone(), "0.0.0.0:8600".parse().unwrap(), dir.clone(), None).await.unwrap();
+    state.compute = Compute::with_sources(None, port, &dir, sources.clone());
+    state.compute.spawn(db.clone());
+    let compute = state.compute.clone();
+    let app = app(state);
+
+    // 没有算力包：界面拿到可下载的模型清单
+    let before = req(Method::GET, "/api/compute").send(&app).await.json();
+    assert_eq!(before["state"], "none");
+    assert_eq!(before["can_download"], true);
+    assert_eq!(before["catalog"][0]["role"], "chat");
+    assert_eq!(before["download"]["status"], "idle");
+    assert_eq!(before["partial"], false);
+    // 什么都没选：拒绝
+    let none = req(Method::POST, "/api/compute/download").json(json!({ "roles": [] })).send(&app).await;
+    assert_eq!(none.json()["code"], "compute_nothing");
+
+    // 上次下到一半的文件：这次从断点接着下
+    let chat = &source.blobs["weights-chat"];
+    let blobs = dir.join("compute/models/blobs");
+    std::fs::create_dir_all(&blobs).unwrap();
+    std::fs::write(blobs.join(format!("sha256-{}.part", fake_source::hex(chat))), &chat[..100_000]).unwrap();
+
+    let started =
+        req(Method::POST, "/api/compute/download").json(json!({ "roles": ["chat", "embed"] })).send(&app).await;
+    assert_eq!(started.status, StatusCode::OK, "{:?}", started.json());
+    for _ in 0..400 {
+        if compute.state() == State::Running {
+            break;
+        }
+        let p = compute.progress();
+        assert_ne!(p.status, "failed", "{p:?}");
+        tokio::time::sleep(std::time::Duration::from_millis(100)).await;
+    }
+    assert_eq!(compute.state(), State::Running, "{:?}", compute.progress());
+    assert!(
+        source.ranges.lock().unwrap().iter().any(|r| r == "bytes=100000-"),
+        "resumed: {:?}",
+        source.ranges.lock().unwrap()
+    );
+
+    // 文件按 Ollama 的存放方式放好，内容完整
+    assert_eq!(std::fs::read(blobs.join(format!("sha256-{}", fake_source::hex(chat)))).unwrap(), *chat);
+    assert!(!blobs.join(format!("sha256-{}.part", fake_source::hex(chat))).exists());
+    assert!(dir.join("compute/models/manifests/registry.ollama.ai/library/qwen3/14b").is_file());
+    assert!(dir.join("compute/models/manifests/registry.ollama.ai/library/bge-m3/latest").is_file());
+    assert!(!dir.join("compute/runtime.download").exists());
+
+    // 启动并接好了：状态、默认对话模型、向量化模型
+    let after = req(Method::GET, "/api/compute").send(&app).await.json();
+    assert_eq!(after["state"], "running");
+    assert_eq!(after["models"]["chat"], "qwen3:14b");
+    assert_eq!(after["models"]["embed"], "bge-m3");
+    let providers = req(Method::GET, "/api/providers").send(&app).await.json();
+    let mine =
+        providers.as_array().unwrap().iter().find(|p| p["base_url"] == format!("http://127.0.0.1:{port}/v1")).unwrap();
+    assert_eq!(mine["default_model"], "qwen3:14b");
+    assert_eq!(req(Method::GET, "/api/kb/settings").send(&app).await.json()["embed"]["model"], "bge-m3");
+    // 已经有了：不再下载
+    let again = req(Method::POST, "/api/compute/download").json(json!({ "roles": ["chat"] })).send(&app).await;
+    assert_eq!(again.json()["code"], "compute_exists");
+    // 重启后能从数据目录里找到它
+    assert!(commonbot_server::compute::find_pack(&commonbot_server::compute::default_places(&dir)).is_some());
+    compute.stop();
+
+    // 下载下来的内容和清单对不上：报告校验失败，不留下坏文件，也不当成可用的包
+    let dir2 = std::env::temp_dir().join(format!("commonbot-test-{}", commonbot_core::new_id()));
+    let free = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let broken = Compute::with_sources(None, free, &dir2, sources.clone());
+    broken.start_download(Db::open_in_memory().unwrap(), &["vision".to_string()]).await.unwrap();
+    for _ in 0..200 {
+        if broken.progress().status != "running" {
+            break;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    let p = broken.progress();
+    assert_eq!((p.status, p.error), ("failed", Some("compute_checksum")), "{p:?}");
+    assert!(broken.pack().is_none() && !dir2.join("compute/pack.json").exists());
+    assert!(std::fs::read_dir(dir2.join("compute/models/blobs")).unwrap().all(|f| !f
+        .unwrap()
+        .file_name()
+        .to_string_lossy()
+        .ends_with(".part")
+        || true));
+
+    // 端口上已有推理服务：不下载，说明原因
+    let llm = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let busy: u16 = llm.trim_end_matches("/v1").rsplit(':').next().unwrap().parse().unwrap();
+    let taken = Compute::with_sources(None, busy, &dir2, sources);
+    assert_eq!(
+        taken.start_download(Db::open_in_memory().unwrap(), &["chat".to_string()]).await.unwrap_err().code,
+        "compute_port_busy"
+    );
 }
