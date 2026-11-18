@@ -24,9 +24,23 @@ If the machine has no display, turn on LAN access from a terminal, note the acce
 2. Before first use, run this once in Terminal on the unpacked folder (the program is unsigned, so macOS refuses to open it otherwise): `xattr -dr com.apple.quarantine path-to-folder`
 3. Double-click “Start CommonBot.command” in the folder. Your browser opens automatically.
 
-### Desktop app (optional)
+### Desktop app: install and use (recommended)
 
-Besides the archive above there is a desktop app with its own window: a `.deb` for Linux (`sudo apt install ./CommonBot_version_arm64.deb`) and a `.dmg` for Mac. It runs the service in the background and shows the interface. Closing the window leaves the service running; quit from the tray icon's menu. It keeps data in the same place as the archive version, so you can switch between the two, but don't run both at once.
+The desktop app has its own window and needs no terminal. When opened it runs the service in the background and shows the interface. Closing the window leaves the service running; quit from the tray icon's menu.
+
+**Mac**
+
+1. Double-click the downloaded `CommonBot_<version>_aarch64.dmg` and drag CommonBot into Applications.
+2. The first time: the app is not notarized by Apple, so macOS blocks a plain double-click. Open System Settings → Privacy & Security and click "Open Anyway" near the bottom. On older systems, Control-click CommonBot in Applications and choose Open. Or run `xattr -dr com.apple.quarantine /Applications/CommonBot.app` once in Terminal. After that it opens normally.
+
+**Spark or another Linux machine**
+
+1. In a terminal, run `sudo apt install ./CommonBot_<version>_arm64.deb` (use the `amd64` file on x64 machines).
+2. Open CommonBot from the applications menu.
+
+**After installing**: open the Models page and click "Download and turn on" under "Local compute: one-click download" at the top (see section 2). When it finishes you can start chatting.
+
+Data is kept in the same place as the archive version, so you can switch between the two, but do not run both at once.
 
 ## 2. Prepare models
 

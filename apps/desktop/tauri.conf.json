@@ -18,6 +18,7 @@
     "publisher": "M&J Group",
     "copyright": "© M&J Group",
     "category": "Productivity",
+    "macOS": { "signingIdentity": "-", "minimumSystemVersion": "11.0" },
     "shortDescription": "在自己的机器上建立和使用智能体",
     "icon": ["icons/32x32.png", "icons/128x128.png", "icons/128x128@2x.png", "icons/icon.icns", "icons/icon.ico", "icons/icon.png"]
   }
