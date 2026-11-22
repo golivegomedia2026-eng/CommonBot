@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "ワークスペース", agents: "エージェント", builder: "ビルダー", kb: "ナレッジ", settings: "設定", models: "モデル", system: "システムと外観", thisHost: "このマシン", lanOn: "LAN アクセス：オン", lanOff: "このマシンのみ", remote: "ホストに接続中", help: "使い方" },
+  nav: { tasks: "タスク", tasksShort: "タスク", workbench: "ワークスペース", agents: "エージェント", builder: "ビルダー", kb: "ナレッジ", settings: "設定", models: "モデル", system: "システムと外観", thisHost: "このマシン", lanOn: "LAN アクセス：オン", lanOff: "このマシンのみ", remote: "ホストに接続中", help: "使い方" },
   common: { save: "保存", cancel: "キャンセル", delete: "削除", edit: "編集", close: "閉じる", copy: "コピー", copied: "コピーしました", retry: "再試行", loading: "読み込み中…", confirmDelete: "もう一度押すと削除します" },
   agents: {
     byTalking: "対話で作成",
@@ -39,6 +39,7 @@ const messages: typeof zh = {
     all: "すべてのエージェント",
   },
   kb: {
+    uploadingN: "アップロード中、残り {n} 件",
     title: "ナレッジベース",
     newTop: "ナレッジベースを作成",
     newFolder: "サブフォルダーを作成",
@@ -239,6 +240,21 @@ const messages: typeof zh = {
     pickModel: "モデルを選択",
     generating: "生成中…",
   },
+  tasks: {
+    title: "タスク",
+    hint: "回答の生成、ファイルのアップロード、ナレッジベースへの登録、計算パックのダウンロードはバックグラウンドで進みます。ページを切り替えても中断されません。",
+    empty: "現在タスクはありません。",
+    clear: "終了したものを消去",
+    stop: "停止",
+    open: "表示",
+    kb: "ナレッジベースへの登録",
+    kbQueued: "処理中の文書があと {n} 件",
+    compute: "ローカル計算のダウンロード",
+    uploads: "ファイルのアップロード",
+    runningCount: "{n} 件のタスクが進行中",
+    status: { running: "進行中", done: "完了", error: "エラー", stopped: "停止済み", failed: "失敗" },
+    upload: { waiting: "待機中", uploading: "アップロード中", done: "アップロード済み", failed: "失敗" },
+  },
   compute: {
     getTitle: "ローカル計算：ワンクリックでダウンロード",
     getHint: "このマシンにはまだ推論サービスがありません。クリックすると、推論ランタイムと選んだモデルを自動でダウンロードし、完了後にそのまま有効にします。ほかの設定は不要です。このマシンがインターネットに接続できる必要があります。",
@@ -269,8 +285,13 @@ const messages: typeof zh = {
     vision: "画像",
   },
   models: {
+    addOnline: "オンライン API を追加",
+    preset: "よく使われるサービス",
+    presetCustom: "カスタム（アドレスを自分で入力）",
+    presetHint: "いずれも OpenAI 互換 API を提供しています。選ぶと名前とアドレスが入力されるので、そのサービスで取得したキーを入力してください。オンラインのサービスを使うと、会話の内容と参照した資料がそのサービスに送信されます。",
+    defaultModelHintOnline: "使用するモデル名を入力します（サービスのドキュメントを参照）。モデル一覧を提供しないサービスでは、入力しないと確認も選択もできません。",
     title: "モデル",
-    subtitle: "既定ではこのマシンの推論サービスを使います。クラウドのモデルは予備として追加できます。",
+    subtitle: "既定ではこのマシンの推論サービスを使います。オンラインの API サービス（OpenAI 互換）を追加して、直接使うことも予備にすることもできます。",
     add: "推論サービスを追加",
     local: "ローカル",
     cloud: "クラウド",
@@ -326,6 +347,7 @@ const messages: typeof zh = {
     enter: "入る",
   },
   errors: {
+    conversation_busy: "このチャットでは前の回答をまだ生成しています。終わるのを待つか、先に停止してください。",
     compute_port_busy: "このマシンではすでに推論サービスが動いており、そのまま使えます。ここでダウンロードしたものに切り替えるには、先にそのサービスを停止してください。",
     compute_busy: "すでにダウンロードが進行中です。",
     compute_nothing: "モデルを 1 つ以上選んでください。",

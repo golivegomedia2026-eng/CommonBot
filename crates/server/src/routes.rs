@@ -232,7 +232,28 @@ pub(crate) fn endpoint(p: &Provider) -> Endpoint {
 async fn check_provider(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<Json<Value>> {
     let provider = st.db.run(move |c| store::get_provider(c, &id)).await?;
     let started = Instant::now();
-    let models = st.llm.list_models(&endpoint(&provider)).await?;
+    let ep = endpoint(&provider);
+    let default = provider.default_model.clone().filter(|m| !m.trim().is_empty());
+    let models = match (st.llm.list_models(&ep).await, default, provider.kind == "cloud") {
+        // 线上服务常常只列出一部分模型：填了默认模型就把它也算上
+        (Ok(mut models), Some(d), true) => {
+            if !models.contains(&d) {
+                models.push(d);
+            }
+            models
+        }
+        (Ok(models), ..) => models,
+        (Err(e @ (commonbot_core::Error::Unreachable(_) | commonbot_core::Error::Unauthorized)), ..) => {
+            return Err(e.into())
+        }
+        // 有的线上服务不提供模型列表：用默认模型实际问一句，通了就算可用
+        (Err(_), Some(d), true) => {
+            let hello = [commonbot_core::llm::ChatMessage { role: "user".into(), content: "hi".into() }];
+            st.llm.complete(&ep, &d, &hello).await?;
+            vec![d]
+        }
+        (Err(e), ..) => return Err(e.into()),
+    };
     Ok(Json(json!({ "models": models, "latency_ms": started.elapsed().as_millis() as u64 })))
 }
 
@@ -328,6 +349,10 @@ async fn rename_conversation(
 }
 
 async fn delete_conversation(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    // 还在生成的回答先叫停
+    if let Some(job) = st.jobs.running(&id) {
+        job.cancel();
+    }
     st.db.run(move |c| store::delete_conversation(c, &id)).await?;
     Ok(StatusCode::NO_CONTENT)
 }

@@ -6,6 +6,7 @@ mod builder;
 mod chat;
 pub mod compute;
 pub mod compute_get;
+pub mod jobs;
 mod published;
 mod routes;
 mod routes_kb;
@@ -45,6 +46,8 @@ pub struct AppState {
     pub web: commonbot_core::web::WebClient,
     /// 升级检查。
     pub updater: Arc<updater::Updater>,
+    /// 在后台生成的回答。
+    pub jobs: Arc<jobs::Jobs>,
     /// 本机算力（随包的推理运行时）。
     pub compute: Arc<compute::Compute>,
     pub(crate) access_token: Arc<RwLock<String>>,
@@ -68,6 +71,7 @@ impl AppState {
             retriever: Retriever { db: db.clone(), llm: llm.clone(), index },
             ingestor,
             updater: Arc::new(updater::Updater::from_build()),
+            jobs: Arc::default(),
             // 默认没有算力包；由启动入口按实际情况换上
             compute: compute::Compute::new(None, 11434, &data_dir),
             // 读取网页时默认拒绝本机和内网地址；只有测试会放开

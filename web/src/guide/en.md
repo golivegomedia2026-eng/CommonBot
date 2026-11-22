@@ -107,6 +107,20 @@ The Agents page lists every agent. Click one to chat. “Configure” at the top
 
 Below the input box you can attach files (used in that chat only, not added to the knowledge base), change which folders are searched for this chat, switch web search on or off, and change the model. Small numbers in a reply are source references; click one to see the original text.
 
+### Tasks: work continues in the background
+
+Replies are generated in the background. If you switch to another conversation or page, or even close the browser, before a reply is finished, it keeps going and is saved; when you come back it carries on displaying. A blinking dot in the conversation list marks a conversation that is still generating. To stop it, click Stop in the input area or in Tasks.
+
+"Tasks" in the navigation lists what is running and what has just finished: replies, file uploads, knowledge-base processing and the local compute download. The number beside it is how many are running.
+
+When you choose several files at once, they are uploaded one at a time: a file that is too large or unsupported affects only itself, and uploads continue after you leave the knowledge-base page.
+
+### Using an online API service
+
+Besides local models you can use an online service (anything with an OpenAI-compatible API). On the Models page click "Add online API", pick one of the common services (OpenAI, DeepSeek, Alibaba Cloud Bailian, SiliconFlow, Moonshot, Zhipu, Volcano Ark, OpenRouter) or enter an address yourself, then enter the key you got from that service and the name of the model to use. Once saved, its models appear in the model list in chats; you can also fix one for an agent or use it as a fallback when the local model is unreachable.
+
+When you use an online service, the conversation and the material it uses are sent to that service; replies it produces are marked as coming from the cloud.
+
 ## 5. Create an agent by talking (Builder)
 
 1. Open Builder and click Start.

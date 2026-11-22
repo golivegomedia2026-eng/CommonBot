@@ -78,7 +78,7 @@ async fn say(
     Json(body): Json<Say>,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     visitor_conversation(&st, token, id.clone()).await?;
-    send_in_conversation(st, id, &body.content, SendOptions::default()).await
+    send_in_conversation(st, id, &body.content, SendOptions::default(), false).await
 }
 
 // ---------- 兼容 OpenAI 的接口 ----------

@@ -3,6 +3,8 @@ import { computed, onBeforeUnmount, onMounted, ref } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
 import { api } from "./api";
+import TaskCenter from "./components/TaskCenter.vue";
+import { runningCount, startTasks, tasks } from "./tasks";
 import { errorText } from "./i18n";
 import { state } from "./state";
 
@@ -17,7 +19,10 @@ async function boot() {
     state.health = await api.health();
     // 发布出去的独立页面凭链接进入，不需要访问码
     if (!state.health.authed && !route.meta.public) await router.replace({ name: "access" });
-    else if (!route.meta.public) void refreshUpdate();
+    else if (!route.meta.public) {
+      void refreshUpdate();
+      startTasks();
+    }
   } catch (e) {
     failed.value = errorText(e);
   }
@@ -80,6 +85,7 @@ onBeforeUnmount(() => clearInterval(updateTimer));
       <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'builder' }" to="/builder">{{ $t("nav.builder") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'kb' }" to="/kb">{{ $t("nav.kb") }}</RouterLink>
+      <button class="link" type="button" data-test="tasks-open" @click="tasks.open = true">{{ $t("nav.tasks") }}<span v-if="runningCount" class="badge" :aria-label="$t('tasks.runningCount', { n: runningCount })">{{ runningCount }}</span></button>
       <span class="group">{{ $t("nav.settings") }}</span>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>
@@ -102,9 +108,11 @@ onBeforeUnmount(() => clearInterval(updateTimer));
       <RouterLink class="link" :class="{ on: route.name === 'chat' || route.name === 'agents' }" to="/agents">{{ $t("nav.agents") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'builder' }" to="/builder">{{ $t("nav.builder") }}</RouterLink>
       <RouterLink class="link" :class="{ on: route.name === 'kb' }" to="/kb">{{ $t("nav.kb") }}</RouterLink>
+      <button class="link" type="button" @click="tasks.open = true">{{ $t("nav.tasksShort") }}<span v-if="runningCount" class="badge">{{ runningCount }}</span></button>
       <RouterLink class="link" active-class="on" to="/settings/models">{{ $t("nav.models") }}</RouterLink>
       <RouterLink class="link" active-class="on" to="/settings/system">{{ $t("nav.system") }}</RouterLink>
     </nav>
+    <TaskCenter v-if="tasks.open" />
   </div>
   <!-- 必须升级：盖住整个界面，没有关闭的办法；只能去下载新版，或重新检查 -->
   <div v-if="mustUpgrade && state.update" class="mask upgrade" role="alertdialog" aria-modal="true" :aria-label="$t('update.requiredTitle')">

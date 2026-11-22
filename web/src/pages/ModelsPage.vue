@@ -127,8 +127,25 @@ async function testWeb() {
 /** 已保存的选择不在当前可选列表里时也要能显示出来。 */
 const extra = (v: string) => (v && !options.value.some((o) => `${o.providerId}\n${o.model}` === v) ? v : "");
 
-function startAdd() {
-  Object.assign(form, { name: "", kind: "local", base_url: "http://127.0.0.1:11434/v1", api_key: "", clear_key: false, default_model: "", has_key: false });
+/** 常见的线上服务（都是 OpenAI 兼容接口）。选一个就填好名称和地址，再填上密钥即可。 */
+const PRESETS = [
+  { name: "OpenAI", url: "https://api.openai.com/v1" },
+  { name: "DeepSeek", url: "https://api.deepseek.com/v1" },
+  { name: "阿里云百炼（通义千问）", url: "https://dashscope.aliyuncs.com/compatible-mode/v1" },
+  { name: "硅基流动 SiliconFlow", url: "https://api.siliconflow.cn/v1" },
+  { name: "月之暗面 Moonshot", url: "https://api.moonshot.cn/v1" },
+  { name: "智谱 BigModel", url: "https://open.bigmodel.cn/api/paas/v4" },
+  { name: "火山方舟（豆包）", url: "https://ark.cn-beijing.volces.com/api/v3" },
+  { name: "OpenRouter", url: "https://openrouter.ai/api/v1" },
+];
+const preset = ref("");
+function applyPreset() {
+  const p = PRESETS.find((x) => x.name === preset.value);
+  if (p) Object.assign(form, { name: p.name, base_url: p.url });
+}
+function startAdd(kind: "local" | "cloud" = "local") {
+  preset.value = "";
+  Object.assign(form, { name: "", kind, base_url: kind === "local" ? "http://127.0.0.1:11434/v1" : "", api_key: "", clear_key: false, default_model: "", has_key: false });
   formError.value = "";
   editing.value = "";
 }
@@ -179,7 +196,8 @@ async function remove(id: string) {
       <div class="eyebrow">{{ $t("nav.settings") }}</div>
       <h1>{{ $t("models.title") }}</h1>
     </div>
-    <button class="btn primary" @click="startAdd"><Icon name="plus" />{{ $t("models.add") }}</button>
+    <button class="btn ghost" data-test="add-online" @click="startAdd('cloud')"><Icon name="plus" />{{ $t("models.addOnline") }}</button>
+    <button class="btn primary" @click="startAdd()"><Icon name="plus" />{{ $t("models.add") }}</button>
   </header>
   <p class="muted">{{ $t("models.subtitle") }}</p>
   <div v-if="error" class="alert err" role="alert">{{ error }}</div>
@@ -299,6 +317,14 @@ async function remove(id: string) {
         <button type="submit" class="btn primary sm" :disabled="saving">{{ $t("common.save") }}</button>
       </div>
       <div v-if="formError" class="alert err" role="alert">{{ formError }}</div>
+      <label v-if="!editing && form.kind === 'cloud'" class="field">
+        <span>{{ $t("models.preset") }}</span>
+        <select v-model="preset" data-test="preset" @change="applyPreset">
+          <option value="">{{ $t("models.presetCustom") }}</option>
+          <option v-for="p in PRESETS" :key="p.name" :value="p.name">{{ p.name }}</option>
+        </select>
+        <span>{{ $t("models.presetHint") }}</span>
+      </label>
       <label class="field"><span>{{ $t("models.name") }}</span><input v-model="form.name" type="text" required maxlength="60" /></label>
       <div class="field">
         <span>{{ $t("models.kind") }}</span>
@@ -321,7 +347,7 @@ async function remove(id: string) {
           <option v-for="m in state.checks[editing].models" :key="m" :value="m">{{ m }}</option>
         </select>
         <input v-else v-model="form.default_model" type="text" spellcheck="false" autocapitalize="off" />
-        <span>{{ $t("models.defaultModelHint") }}</span>
+        <span>{{ $t(form.kind === "cloud" ? "models.defaultModelHintOnline" : "models.defaultModelHint") }}</span>
       </label>
     </form>
   </template>

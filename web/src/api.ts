@@ -276,18 +276,24 @@ export const api = {
   conversation: (id: string) => call<{ conversation: Conversation; messages: Message[]; attachments: Attachment[] }>("GET", `/conversations/${id}`),
   removeAttachment: (conversationId: string, id: string) => call<void>("DELETE", `/conversations/${conversationId}/attachments/${id}`),
   /** 给对话上传文件；读不了的在 rejected 里逐个说明。 */
-  async attach(conversationId: string, files: File[]): Promise<{ added: Attachment[]; rejected: { name: string; code: string }[] }> {
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f, f.name));
-    let resp: Response;
-    try {
-      resp = await fetch(`/api/conversations/${conversationId}/attachments`, { method: "POST", body: form });
-    } catch (e) {
-      throw new ApiError(0, "upload_failed", String(e));
+  async attach(conversationId: string, files: File[], onEach?: (done: number) => void): Promise<{ added: Attachment[]; rejected: { name: string; code: string }[] }> {
+    // 一个文件一次请求：某个文件太大或出错不影响其余的，也不会因为总量太大被整个拒绝
+    const out = { added: [] as Attachment[], rejected: [] as { name: string; code: string }[] };
+    for (const [i, file] of files.entries()) {
+      try {
+        const r = await uploadOne<Attachment>(`/api/conversations/${conversationId}/attachments`, file);
+        out.added.push(...r.added);
+        out.rejected.push(...r.rejected);
+      } catch (e) {
+        out.rejected.push({ name: file.name, code: e instanceof ApiError ? e.code : "upload_failed" });
+      }
+      onEach?.(i + 1);
     }
-    if (!resp.ok) throw await toError(resp);
-    return resp.json();
+    return out;
   },
+  stopReply: (conversationId: string) => call<void>("POST", `/conversations/${conversationId}/stop`),
+  tasks: () => call<{ tasks: ServerTask[]; running: number }>("GET", "/tasks"),
+  clearTasks: () => call<void>("POST", "/tasks/clear"),
   webSettings: () => call<WebSettings>("GET", "/settings/web"),
   saveWebSettings: (s: { kind: string; base_url: string; api_key?: string; fetch_pages: boolean }) => call<WebSettings>("PUT", "/settings/web", s),
   testWeb: (query: string) => call<{ results: { title: string; url: string; text: string }[] }>("POST", "/settings/web/test", { query }),
@@ -317,23 +323,48 @@ export const kb = {
       ocr_model: s.ocr?.model ?? "",
     }),
   /** 上传若干文件。不支持或过大的文件在 rejected 里逐个说明。 */
-  async upload(folderId: string, files: File[]): Promise<{ added: KbDocument[]; rejected: { name: string; code: string }[] }> {
-    const form = new FormData();
-    files.forEach((f) => form.append("files", f, f.name));
-    let resp: Response;
-    try {
-      resp = await fetch(`/api/kb/folders/${folderId}/documents`, { method: "POST", body: form });
-    } catch (e) {
-      throw new ApiError(0, "upload_failed", String(e));
-    }
-    if (!resp.ok) throw await toError(resp);
-    return resp.json();
-  },
+  /** 上传一个文件到文件夹。多个文件由任务中心排队逐个传。 */
+  uploadOne: (folderId: string, file: File) => uploadOne<KbDocument>(`/api/kb/folders/${folderId}/documents`, file),
 };
+
+async function uploadOne<T>(url: string, file: File): Promise<{ added: T[]; rejected: { name: string; code: string }[] }> {
+  const form = new FormData();
+  form.append("files", file, file.name);
+  let resp: Response;
+  try {
+    resp = await fetch(url, { method: "POST", body: form });
+  } catch (e) {
+    throw new ApiError(0, "upload_failed", String(e));
+  }
+  if (!resp.ok) throw await toError(resp);
+  return resp.json();
+}
+
+/** 任务中心里由服务报告的任务：正在生成或刚结束的回答、知识库入库、算力下载。 */
+export interface ServerTask {
+  id: string;
+  kind: "chat" | "kb" | "compute";
+  status: "running" | "done" | "error" | "stopped" | "failed";
+  title?: string;
+  agent_id?: string;
+  agent_name?: string;
+  conversation_id?: string;
+  started_at?: number;
+  finished_at?: number | null;
+  queued?: number;
+  step?: string;
+  item?: string;
+  done?: number;
+  total?: number;
+  error?: string | null;
+  detail?: string | null;
+}
 
 export type StreamEvent =
   | { type: "user"; message: Message; conversation: Conversation; attachments: Attachment[] }
   | { type: "fallback"; model: string; provider: string }
+  /** 接上一个正在生成的回答时，到目前为止的内容。 */
+  | { type: "snapshot"; content: string; reasoning: string; sources: { sources: Source[]; web_note: string | null } | null; fallback: { model: string } | null }
   | { type: "sources"; sources: Source[]; semantic: boolean; note: string | null; web_note: string | null }
   | { type: "delta"; text: string }
   | { type: "reasoning"; text: string }
@@ -368,18 +399,23 @@ export function parseEvents(buffer: string): { events: StreamEvent[]; rest: stri
 
 /** 发一个请求并逐个接收事件流里的事件。中止 signal 即停止。 */
 export async function postStream(path: string, body: unknown, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<void> {
+  await readStream(path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) }, onEvent, signal);
+}
+
+/** 接上一个对话里正在生成的回答。没有回答在生成时返回 false。中止 signal 只是不再看，不影响生成。 */
+export function watchReply(conversationId: string, onEvent: (e: StreamEvent) => void, signal: AbortSignal): Promise<boolean> {
+  return readStream(`/conversations/${conversationId}/stream`, { method: "GET" }, onEvent, signal);
+}
+
+async function readStream(path: string, init: RequestInit, onEvent: (e: StreamEvent) => void, signal?: AbortSignal): Promise<boolean> {
   let resp: Response;
   try {
-    resp = await fetch(`/api${path}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body),
-      signal,
-    });
+    resp = await fetch(`/api${path}`, { ...init, signal });
   } catch (e) {
     if ((e as Error).name === "AbortError") throw e;
     throw new ApiError(0, "offline", String(e));
   }
+  if (resp.status === 204) return false;
   if (!resp.ok || !resp.body) throw await toError(resp);
   const reader = resp.body.getReader();
   const decoder = new TextDecoder();
@@ -392,9 +428,10 @@ export async function postStream(path: string, body: unknown, onEvent: (e: Strea
     buffer = parsed.rest;
     parsed.events.forEach(onEvent);
   }
+  return true;
 }
 
-/** 发一句话并逐段接收回答。中止 signal 即停止生成，已生成的部分由服务保存。 */
+/** 发一句话并逐段接收回答。回答在服务里后台生成：中止 signal 只是不再看；要停止生成用 api.stopReply。 */
 export function sendMessage(
   conversationId: string,
   body: { content: string; provider_id?: string; model?: string; scope?: string[]; web?: boolean; attachment_ids?: string[] },

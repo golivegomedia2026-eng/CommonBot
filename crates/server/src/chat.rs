@@ -34,6 +34,10 @@ const MAX_ATTACHMENT_BYTES: u64 = 50 * 1024 * 1024;
 pub fn routes() -> Router<AppState> {
     Router::new()
         .route("/conversations/{id}/messages", post(send_message))
+        .route("/conversations/{id}/stream", axum::routing::get(watch_reply))
+        .route("/conversations/{id}/stop", post(stop_reply))
+        .route("/tasks", axum::routing::get(list_tasks))
+        .route("/tasks/clear", post(clear_tasks))
         .route(
             "/conversations/{id}/attachments",
             post(upload_attachments).layer(DefaultBodyLimit::max(MAX_ATTACHMENT_BYTES as usize * 4)),
@@ -304,12 +308,16 @@ pub(crate) struct SendOptions {
 /// 在一个已有的对话里发一句话，回答以事件流返回：
 /// `user`（已保存的提问、对话、随它发出的文件）→ `sources`（这次用到的资料，没有则不发）
 /// →（必要时）`fallback`（改用云端模型）→ 若干 `reasoning` / `delta` → `done` 或 `error`（都带已保存的回答）。
-/// 浏览器中途断开即视为停止，已生成的部分照样保存。
+///
+/// `background` 为假（访客的独立链接）：浏览器中途断开即视为停止，已生成的部分照样保存。
+/// `background` 为真（主人自己的对话）：回答作为后台任务生成，浏览器断开、切到别的对话都不影响；
+/// 之后可以用 `watch_reply` 接上去继续看，用 `stop_reply` 叫停。
 pub(crate) async fn send_in_conversation(
     st: AppState,
     id: String,
     content: &str,
     opts: SendOptions,
+    background: bool,
 ) -> ApiResult<Sse<impl Stream<Item = Result<Event, Infallible>>>> {
     let content = content.trim().to_string();
     if content.is_empty() || content.chars().count() > MAX_MESSAGE_CHARS {
@@ -345,9 +353,17 @@ pub(crate) async fn send_in_conversation(
         }
     };
 
+    // 后台任务：一个对话同一时间只生成一个回答
+    let job = match background {
+        true => Some(st.jobs.start(&id, &agent.id, &agent.name, &content).ok_or_else(|| {
+            ApiError::new(StatusCode::CONFLICT, "conversation_busy", "a reply is still being generated")
+        })?),
+        false => None,
+    };
+
     let (conv_id, pid, mdl) = (id.clone(), provider.id.clone(), model.clone());
     let (scope, web, ids, text) = (opts.scope.clone(), opts.web, opts.attachment_ids.clone(), content.clone());
-    let (user_msg, conversation, messages, files) = st
+    let saved = st
         .db
         .run(move |c| {
             store::set_scope(c, &conv_id, scope.as_deref())?;
@@ -361,7 +377,16 @@ pub(crate) async fn send_in_conversation(
                 attach::list(c, &conv_id)?,
             ))
         })
-        .await?;
+        .await;
+    let (user_msg, conversation, messages, files) = match saved {
+        Ok(v) => v,
+        Err(e) => {
+            if let Some(job) = &job {
+                st.jobs.discard(job);
+            }
+            return Err(e.into());
+        }
+    };
 
     let (tx, rx) = mpsc::channel::<Event>(64);
     let sent_files: Vec<&Attachment> =
@@ -395,21 +420,47 @@ pub(crate) async fn send_in_conversation(
             let st = st.clone();
             tokio::spawn(async move { run_turn(&st, turn, ttx).await })
         };
-        while let Some(ev) = trx.recv().await {
-            let e = match ev {
-                TurnEvent::Sources(payload) => event("sources", payload),
-                TurnEvent::Fallback { model, provider } => {
-                    event("fallback", json!({ "model": model, "provider": provider }))
-                }
-                TurnEvent::Delta(t) => event("delta", json!({ "text": t })),
-                TurnEvent::Reasoning(t) => event("reasoning", json!({ "text": t })),
+        // 浏览器走了：访客的对话就此停下；后台任务继续生成，只是不再往这条连接上发
+        let mut gone = false;
+        loop {
+            let ev = match &job {
+                Some(job) => tokio::select! {
+                    ev = trx.recv() => ev,
+                    _ = job.cancelled() => None,
+                },
+                None => trx.recv().await,
             };
-            if tx.send(e).await.is_err() {
-                break; // 浏览器走了；丢掉接收端，让这一轮停下来
+            let Some(ev) = ev else { break };
+            let (name, data) = match ev {
+                TurnEvent::Sources(payload) => ("sources", payload),
+                TurnEvent::Fallback { model, provider } => {
+                    ("fallback", json!({ "model": model, "provider": provider }))
+                }
+                TurnEvent::Delta(t) => ("delta", json!({ "text": t })),
+                TurnEvent::Reasoning(t) => ("reasoning", json!({ "text": t })),
+            };
+            if let Some(job) = &job {
+                job.publish(name, &data);
+            }
+            if !gone && tx.send(event(name, data)).await.is_err() {
+                if job.is_none() {
+                    break; // 丢掉接收端，让这一轮停下来
+                }
+                gone = true;
             }
         }
         drop(trx);
-        let Ok(out) = worker.await else { return };
+        let Ok(out) = worker.await else {
+            if let Some(job) = &job {
+                st.jobs.finish(
+                    job,
+                    "error",
+                    json!({ "code": "internal", "detail": "the reply task crashed" }),
+                    "error",
+                );
+            }
+            return;
+        };
 
         let status = if out.failure.is_some() {
             "error"
@@ -436,17 +487,20 @@ pub(crate) async fn send_in_conversation(
                 store::add_assistant_message(c, &id, &reply)
             })
             .await;
-        let last = match (saved, out.failure) {
-            (Ok(message), None) => event("done", json!({ "message": message })),
+        let (name, data) = match (saved, out.failure) {
+            (Ok(message), None) => ("done", json!({ "message": message })),
             (Ok(message), Some(e)) => {
-                event("error", json!({ "code": e.code(), "detail": e.to_string(), "message": message }))
+                ("error", json!({ "code": e.code(), "detail": e.to_string(), "message": message }))
             }
             (Err(e), _) => {
                 tracing::error!(error = %e, "could not save the reply");
-                event("error", json!({ "code": e.code(), "detail": e.to_string() }))
+                ("error", json!({ "code": e.code(), "detail": e.to_string() }))
             }
         };
-        let _ = tx.send(last).await;
+        if let Some(job) = &job {
+            st.jobs.finish(job, name, data.clone(), if status == "ok" { "done" } else { status });
+        }
+        let _ = tx.send(event(name, data)).await;
     });
 
     Ok(Sse::new(ReceiverStream::new(rx).map(Ok)).keep_alive(KeepAlive::default()))
@@ -466,7 +520,79 @@ async fn send_message(
         attachment_ids: body.attachment_ids,
     };
     owner_conversation(&st, &id).await?;
-    send_in_conversation(st, id, &body.content, opts).await
+    send_in_conversation(st, id, &body.content, opts, true).await
+}
+
+/// 接上这个对话里正在生成的回答：先给到目前为止的内容（`snapshot`），再给之后的事件，直到 `done` / `error`。
+/// 没有回答在生成时返回 204。断开这条连接不影响生成。
+async fn watch_reply(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<axum::response::Response> {
+    use axum::response::IntoResponse;
+    use tokio::sync::broadcast::error::RecvError;
+    owner_conversation(&st, &id).await?;
+    let Some(job) = st.jobs.running(&id) else {
+        return Ok(StatusCode::NO_CONTENT.into_response());
+    };
+    let (tx, rx) = mpsc::channel::<Event>(64);
+    tokio::spawn(async move {
+        let mut attached = job.attach();
+        if tx.send(event("snapshot", attached.snapshot)).await.is_err() {
+            return;
+        }
+        if let Some((name, data)) = attached.finished {
+            let _ = tx.send(event(name, data)).await;
+            return;
+        }
+        loop {
+            let e = match attached.events.recv().await {
+                Ok((name, data)) => {
+                    let last = matches!(name, "done" | "error");
+                    if tx.send(event(name, data)).await.is_err() || last {
+                        return;
+                    }
+                    continue;
+                }
+                // 界面读得太慢、漏了一些片段：重新给一份完整的目前内容
+                Err(RecvError::Lagged(_)) => event("snapshot", job.snapshot()),
+                Err(RecvError::Closed) => return,
+            };
+            if tx.send(e).await.is_err() {
+                return;
+            }
+        }
+    });
+    Ok(Sse::new(ReceiverStream::new(rx).map(Ok::<_, Infallible>)).keep_alive(KeepAlive::default()).into_response())
+}
+
+/// 叫停这个对话里正在生成的回答。已生成的部分照样保存。
+async fn stop_reply(State(st): State<AppState>, Path(id): Path<String>) -> ApiResult<StatusCode> {
+    owner_conversation(&st, &id).await?;
+    if let Some(job) = st.jobs.running(&id) {
+        job.cancel();
+    }
+    Ok(StatusCode::NO_CONTENT)
+}
+
+/// 任务中心：正在生成和刚结束的回答、知识库入库、算力下载。
+async fn list_tasks(State(st): State<AppState>) -> ApiResult<Json<Value>> {
+    let mut tasks = st.jobs.list();
+    let stats = st.db.run(|c| kb::stats(c, None)).await?;
+    if stats.queued > 0 {
+        tasks.push(json!({ "id": "kb", "kind": "kb", "status": "running", "queued": stats.queued }));
+    }
+    let download = st.compute.progress();
+    if download.status != "idle" {
+        tasks.push(json!({
+            "id": "compute", "kind": "compute", "status": download.status, "step": download.step, "item": download.item,
+            "done": download.done, "total": download.total, "error": download.error, "detail": download.detail,
+        }));
+    }
+    let running = tasks.iter().filter(|t| t["status"] == "running").count();
+    Ok(Json(json!({ "tasks": tasks, "running": running })))
+}
+
+async fn clear_tasks(State(st): State<AppState>) -> StatusCode {
+    st.jobs.clear_finished();
+    StatusCode::NO_CONTENT
 }
 
 /// 主人的接口只处理主人自己的对话；访客通过链接建的对话不在此列。

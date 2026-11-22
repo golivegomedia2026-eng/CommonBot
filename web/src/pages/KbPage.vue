@@ -6,6 +6,7 @@ import { type AgentSummary, api, type Hit, kb, type KbDocument, type KbSettings,
 import Icon from "../components/Icon.vue";
 import { errorCodeText, errorText, locText } from "../i18n";
 import { folderPath, folderTotal, folderTree, loadFolders, state } from "../state";
+import { enqueueUploads, tasks } from "../tasks";
 
 const route = useRoute();
 const router = useRouter();
@@ -15,8 +16,6 @@ const settings = ref<KbSettings | null>(null);
 const agents = ref<AgentSummary[]>([]);
 const documents = ref<KbDocument[]>([]);
 const stats = ref<KbStats | null>(null);
-const rejected = ref<{ name: string; code: string }[]>([]);
-const uploading = ref(false);
 const dragOver = ref(false);
 const picker = ref<HTMLInputElement>();
 const confirming = ref("");
@@ -72,7 +71,6 @@ async function refresh() {
 watch(folderId, () => {
   documents.value = [];
   stats.value = null;
-  rejected.value = [];
   naming.value = "";
   void refresh();
 });
@@ -126,23 +124,29 @@ const removeDoc = (d: KbDocument) =>
     await Promise.all([loadDocuments(), loadFolders()]);
   });
 
-async function upload(files: FileList | File[] | null | undefined) {
+// 上传交给任务中心排队逐个传：离开这个页面也会继续，一个文件出错不影响其余的
+function upload(files: FileList | File[] | null | undefined) {
   const list = Array.from(files ?? []);
-  if (!list.length || !folderId.value) return;
-  uploading.value = true;
+  if (!list.length || !folderId.value || !folder.value) return;
   error.value = "";
-  try {
-    const r = await kb.upload(folderId.value, list);
-    rejected.value = r.rejected;
-    await Promise.all([loadDocuments(), loadFolders()]);
-    schedule();
-  } catch (e) {
-    error.value = errorText(e);
-  } finally {
-    uploading.value = false;
-    if (picker.value) picker.value.value = "";
-  }
+  enqueueUploads(folderId.value, folder.value.name, list);
+  if (picker.value) picker.value.value = "";
 }
+const mine = computed(() => tasks.uploads.filter((u) => u.folderId === folderId.value));
+const uploading = computed(() => mine.value.some((u) => u.status === "waiting" || u.status === "uploading"));
+const uploadsLeft = computed(() => mine.value.filter((u) => u.status === "waiting" || u.status === "uploading").length);
+const rejected = computed(() => mine.value.filter((u) => u.status === "failed").map((u) => ({ name: u.name, code: u.code ?? "upload_failed" })));
+watch(
+  () => tasks.kbTick,
+  async () => {
+    try {
+      await Promise.all([loadDocuments(), loadFolders()]);
+      schedule();
+    } catch {
+      /* 定时刷新会补上 */
+    }
+  },
+);
 
 async function act(d: KbDocument, action: "retry" | "pause" | "resume") {
   try {
@@ -201,7 +205,7 @@ function statusText(d: KbDocument): string {
       <h1>{{ $t("kb.title") }}</h1>
     </div>
     <button class="btn ghost" @click="startNaming('top')"><Icon name="plus" />{{ $t("kb.newTop") }}</button>
-    <button class="btn primary" :disabled="!folder || uploading" @click="picker?.click()"><Icon name="clip" />{{ uploading ? $t("kb.uploading") : $t("kb.upload") }}</button>
+    <button class="btn primary" :disabled="!folder" @click="picker?.click()"><Icon name="clip" />{{ uploading ? $t("kb.uploadingN", { n: uploadsLeft }) : $t("kb.upload") }}</button>
     <input ref="picker" type="file" multiple hidden @change="upload(($event.target as HTMLInputElement).files)" />
   </header>
 

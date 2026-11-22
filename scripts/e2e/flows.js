@@ -121,6 +121,80 @@ const check = (name, ok, detail = "") => {
   check("conversation survives a reload", (await p.locator(".msg").count()) === 6);
   await noOverflow(p, "chat");
 
+  // ---- 后台任务：回答生成途中切到别的对话不会中断，切回来接着看；任务中心里能看到、能停止 ----
+  const filler = "这是一段用来拉长回答的文字。";
+  const repeats = (t) => t.split(filler).length - 1;
+  await p.click(".page-head a.btn.primary");
+  await p.waitForFunction(() => document.querySelectorAll(".msg.me").length === 0);
+  await p.fill(".composer textarea", "来一个长篇回答");
+  await p.keyboard.press("Enter");
+  await p.waitForSelector(".caret");
+  await p.click('.hist .h:has-text("这是第二个对话")');
+  await p.waitForFunction(() => document.querySelectorAll(".msg").length === 2 && !document.querySelector(".caret"));
+  await p.waitForSelector(".side .badge");
+  check("a running reply shows on the task badge and in the conversation list", (await p.textContent(".side .badge")).trim() === "1" && (await p.locator(".hist .h .gen").count()) === 1);
+  await p.click("[data-test=tasks-open]");
+  await p.waitForSelector("[data-test=tasks] .task .tag.info");
+  check("task center lists the running reply", (await p.textContent("[data-test=tasks] .task")).includes("来一个长篇回答"));
+  await shot("tasks");
+  await p.click('[data-test=tasks] .task button:has-text("查看")');
+  await p.waitForSelector(".caret");
+  await p.waitForFunction((f) => (document.querySelector(".msgs")?.textContent ?? "").includes(f), filler, { timeout: 15000 }).catch(() => {});
+  const partial = repeats(await p.textContent(".msg.bot >> nth=-1"));
+  check("coming back shows the reply still being written", partial > 0 && partial < 40, `${partial} of 40 so far`);
+  await p.waitForSelector(".caret", { state: "detached", timeout: 30000 });
+  const whole = await p.textContent(".msg.bot >> nth=-1");
+  check("the reply finished in full although the page left", repeats(whole) === 40 && !whole.includes("已停止"), `${repeats(whole)} of 40`);
+  await p.waitForFunction(() => !document.querySelector(".side .badge"));
+  // 停止：从输入区点停止，已生成的部分保留
+  await p.fill(".composer textarea", "再来一个长篇回答");
+  await p.keyboard.press("Enter");
+  await p.waitForSelector(".caret");
+  await p.waitForTimeout(600);
+  await p.click(".composer .send");
+  await p.waitForSelector(".caret", { state: "detached", timeout: 10000 });
+  const cut = await p.textContent(".msg.bot >> nth=-1");
+  check("stop keeps what was written and marks it stopped", repeats(cut) < 40 && cut.includes("已停止"), `${repeats(cut)} of 40`);
+  // 一次选多个文件发到对话里：逐个上传，全部到位
+  const notes = [1, 2, 3, 4, 5].map((n) => ({ name: `会议纪要 ${n}.txt`, mimeType: "text/plain", buffer: Buffer.from(`第 ${n} 次会议：确定了第 ${n} 项安排。`) }));
+  await p.setInputFiles(".composer input[type=file]", notes);
+  await p.waitForFunction(() => document.querySelectorAll(".composer .att").length === 5, null, { timeout: 20000 }).catch(() => {});
+  check("several files chosen at once are all attached", (await p.locator(".composer .att").count()) === 5);
+
+  // ---- 知识库一次传多个文件：排队逐个上传，离开页面也继续 ----
+  await p.goto(base + "/kb");
+  await p.waitForSelector("tbody tr");
+  const before = await p.locator("tbody tr").count();
+  const many = Array.from({ length: 8 }, (_, i) => ({ name: `补充说明 ${i + 1}.md`, mimeType: "text/markdown", buffer: Buffer.from(`# 补充说明 ${i + 1}\n\n第 ${i + 1} 条补充：配件保修九十天。`) }));
+  await p.setInputFiles("input[type=file]", [...many, { name: "不支持.zip", mimeType: "application/zip", buffer: Buffer.from("PK") }]);
+  await p.click(".side a[href='/agents']");
+  await p.waitForSelector(".page-head");
+  await p.click("[data-test=tasks-open]");
+  await p.waitForFunction(() => document.querySelectorAll("[data-test=tasks] .task .tag.ok").length >= 8, null, { timeout: 30000 }).catch(() => {});
+  const uploadText = await p.textContent("[data-test=tasks]");
+  check("uploads continue after leaving the page; the bad file is reported alone", (await p.locator("[data-test=tasks] .task .tag.ok").count()) >= 8 && uploadText.includes("不支持.zip"));
+  await p.click('[data-test=tasks] button:has-text("清除已结束的")');
+  await p.click('[data-test=tasks] button:has-text("关闭")');
+  await p.goto(base + "/kb");
+  await ready(before + 8);
+  check("all the files uploaded together are in the knowledge base", (await p.locator("tbody tr").count()) === before + 8);
+
+  // ---- 线上 API：从常用服务里选，填密钥和模型即可用 ----
+  await p.goto(base + "/settings/models");
+  await p.click("[data-test=add-online]");
+  await p.selectOption("[data-test=preset]", "DeepSeek");
+  const inputs = p.locator(".drawer input[type=text]");
+  check("picking a common service fills in its address", (await inputs.nth(1).inputValue()) === "https://api.deepseek.com/v1" && (await inputs.nth(0).inputValue()) === "DeepSeek");
+  await inputs.nth(0).fill("线上服务");
+  await inputs.nth(1).fill("http://127.0.0.1:11434/only-chat");
+  await p.fill(".drawer input[type=password]", "sk-test");
+  await inputs.nth(2).fill("vendor-pro");
+  await shot("models-online");
+  await p.click(".drawer button[type=submit]");
+  const online = p.locator(".card:not(.form)", { hasText: "线上服务" });
+  await online.locator(".tag.ok").first().waitFor({ timeout: 15000 });
+  check("an online service without a model list is usable through its default model", (await online.textContent()).includes("vendor-pro") || (await online.locator(".tag.ok").count()) > 0);
+
   // ---- 建造师：访谈、草稿、手动修改、试答、发布 ----
   await p.goto(base + "/builder");
   await p.click(".page-head button.btn.primary");

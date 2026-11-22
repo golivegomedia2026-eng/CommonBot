@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "Workspace", agents: "Agents", builder: "Builder", kb: "Knowledge", settings: "Settings", models: "Models", system: "System & appearance", thisHost: "This machine", lanOn: "LAN access: on", lanOff: "This machine only", remote: "Connected to host", help: "User guide" },
+  nav: { tasks: "Tasks", tasksShort: "Tasks", workbench: "Workspace", agents: "Agents", builder: "Builder", kb: "Knowledge", settings: "Settings", models: "Models", system: "System & appearance", thisHost: "This machine", lanOn: "LAN access: on", lanOff: "This machine only", remote: "Connected to host", help: "User guide" },
   common: { save: "Save", cancel: "Cancel", delete: "Delete", edit: "Edit", close: "Close", copy: "Copy", copied: "Copied", retry: "Retry", loading: "Loading…", confirmDelete: "Click again to delete" },
   agents: {
     byTalking: "Create by talking",
@@ -39,6 +39,7 @@ const messages: typeof zh = {
     all: "All agents",
   },
   kb: {
+    uploadingN: "Uploading, {n} left",
     title: "Knowledge base",
     newTop: "New knowledge base",
     newFolder: "New subfolder",
@@ -239,6 +240,21 @@ const messages: typeof zh = {
     pickModel: "Choose a model",
     generating: "Generating…",
   },
+  tasks: {
+    title: "Tasks",
+    hint: "Replies, file uploads, knowledge-base processing and compute downloads run in the background. Switching pages does not interrupt them.",
+    empty: "No tasks right now.",
+    clear: "Clear finished",
+    stop: "Stop",
+    open: "View",
+    kb: "Knowledge-base processing",
+    kbQueued: "{n} documents still being processed",
+    compute: "Local compute download",
+    uploads: "File uploads",
+    runningCount: "{n} tasks running",
+    status: { running: "Running", done: "Done", error: "Error", stopped: "Stopped", failed: "Failed" },
+    upload: { waiting: "Waiting", uploading: "Uploading", done: "Uploaded", failed: "Failed" },
+  },
   compute: {
     getTitle: "Local compute: one-click download",
     getHint: "There is no inference service on this machine yet. Click once and CommonBot downloads the inference runtime and the models you pick, then turns them on. Nothing else to set up. This machine needs internet access.",
@@ -269,8 +285,13 @@ const messages: typeof zh = {
     vision: "Vision",
   },
   models: {
+    addOnline: "Add online API",
+    preset: "Common services",
+    presetCustom: "Custom (enter the address yourself)",
+    presetHint: "These services all offer an OpenAI-compatible API. Picking one fills in the name and address; then enter the key you got from that service. When you use an online service, the conversation and the material it uses are sent to it.",
+    defaultModelHintOnline: "Enter the name of the model to use (see the service's documentation). Some services do not list their models; they can only be checked and selected once this is filled in.",
     title: "Models",
-    subtitle: "The local inference service is used by default. Cloud models can be added as a fallback.",
+    subtitle: "The local inference service is used by default. You can also add an online API service (OpenAI-compatible) and use it directly or as a fallback.",
     add: "Add inference service",
     local: "Local",
     cloud: "Cloud",
@@ -326,6 +347,7 @@ const messages: typeof zh = {
     enter: "Enter",
   },
   errors: {
+    conversation_busy: "The previous reply in this conversation is still being generated. Wait for it to finish or stop it first.",
     compute_port_busy: "An inference service is already running on this machine and can be used as is. To use the one downloaded here instead, stop that service first.",
     compute_busy: "A download is already running.",
     compute_nothing: "Pick at least one model.",

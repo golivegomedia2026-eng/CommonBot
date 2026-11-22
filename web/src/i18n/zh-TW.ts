@@ -1,7 +1,7 @@
 import type zh from "./zh-CN";
 
 const messages: typeof zh = {
-  nav: { workbench: "工作台", agents: "智慧體", builder: "建造師", kb: "知識庫", settings: "設定", models: "模型", system: "系統與外觀", thisHost: "本機", lanOn: "區域網路存取：已開啟", lanOff: "僅本機可用", remote: "已連線到主機", help: "使用說明" },
+  nav: { tasks: "任務中心", tasksShort: "任務", workbench: "工作台", agents: "智慧體", builder: "建造師", kb: "知識庫", settings: "設定", models: "模型", system: "系統與外觀", thisHost: "本機", lanOn: "區域網路存取：已開啟", lanOff: "僅本機可用", remote: "已連線到主機", help: "使用說明" },
   common: { save: "儲存", cancel: "取消", delete: "刪除", edit: "編輯", close: "關閉", copy: "複製", copied: "已複製", retry: "重試", loading: "載入中…", confirmDelete: "再點一次確認刪除" },
   agents: {
     byTalking: "對話生成",
@@ -39,6 +39,7 @@ const messages: typeof zh = {
     all: "全部智慧體",
   },
   kb: {
+    uploadingN: "上傳中，還剩 {n} 個",
     title: "知識庫",
     newTop: "新增知識庫",
     newFolder: "新增子資料夾",
@@ -239,6 +240,21 @@ const messages: typeof zh = {
     pickModel: "選擇模型",
     generating: "正在產生…",
   },
+  tasks: {
+    title: "任務中心",
+    hint: "回答產生、檔案上傳、知識庫入庫、算力下載都在背景進行，切換頁面不會中斷。",
+    empty: "現在沒有任務。",
+    clear: "清除已結束的",
+    stop: "停止",
+    open: "查看",
+    kb: "知識庫入庫",
+    kbQueued: "還有 {n} 個文件在處理",
+    compute: "本機算力下載",
+    uploads: "檔案上傳",
+    runningCount: "{n} 個任務進行中",
+    status: { running: "進行中", done: "已完成", error: "發生錯誤", stopped: "已停止", failed: "失敗" },
+    upload: { waiting: "等待中", uploading: "上傳中", done: "已上傳", failed: "失敗" },
+  },
   compute: {
     getTitle: "本機算力：一鍵下載",
     getHint: "這台機器上還沒有推理服務。點一下，程式會自己下載推理執行環境和選取的模型，下載完自動啟用，不用再做別的設定。需要這台機器能上網。",
@@ -269,8 +285,13 @@ const messages: typeof zh = {
     vision: "看圖",
   },
   models: {
+    addOnline: "新增線上 API",
+    preset: "常用服務",
+    presetCustom: "自訂（自己填位址）",
+    presetHint: "這些服務都提供 OpenAI 相容介面。選一個會填好名稱和位址，再填上你在該服務申請的金鑰。使用線上服務時，對話內容和用到的資料會傳送給它。",
+    defaultModelHintOnline: "填上要用的模型名稱（見該服務的文件）。有的服務不提供模型清單，填了才能檢測和選用。",
     title: "模型",
-    subtitle: "預設使用本機的推論服務。雲端模型可作為後備加入。",
+    subtitle: "預設使用本機的推理服務。也可以新增線上的 API 服務（OpenAI 相容介面），直接選用或作為備援。",
     add: "新增推論服務",
     local: "本機",
     cloud: "雲端",
@@ -326,6 +347,7 @@ const messages: typeof zh = {
     enter: "進入",
   },
   errors: {
+    conversation_busy: "這個對話裡的上一個回答還在產生，等它結束或先停止它。",
     compute_port_busy: "這台機器上已經有推理服務在執行，可以直接用它；要改用這裡下載的，請先停掉它。",
     compute_busy: "已經有一個下載在進行。",
     compute_nothing: "請至少選一個模型。",

@@ -1,5 +1,5 @@
 export default {
-  nav: { workbench: "工作台", agents: "智能体", builder: "建造师", kb: "知识库", settings: "设置", models: "模型", system: "系统与外观", thisHost: "本机", lanOn: "局域网访问：已开启", lanOff: "仅本机可用", remote: "已连接到主机", help: "使用说明" },
+  nav: { tasks: "任务中心", tasksShort: "任务", workbench: "工作台", agents: "智能体", builder: "建造师", kb: "知识库", settings: "设置", models: "模型", system: "系统与外观", thisHost: "本机", lanOn: "局域网访问：已开启", lanOff: "仅本机可用", remote: "已连接到主机", help: "使用说明" },
   common: { save: "保存", cancel: "取消", delete: "删除", edit: "编辑", close: "关闭", copy: "复制", copied: "已复制", retry: "重试", loading: "加载中…", confirmDelete: "再点一次确认删除" },
   agents: {
     byTalking: "对话生成",
@@ -37,6 +37,7 @@ export default {
     all: "全部智能体",
   },
   kb: {
+    uploadingN: "上传中，还剩 {n} 个",
     title: "知识库",
     newTop: "新建知识库",
     newFolder: "新建子文件夹",
@@ -237,6 +238,21 @@ export default {
     pickModel: "选择模型",
     generating: "正在生成…",
   },
+  tasks: {
+    title: "任务中心",
+    hint: "回答生成、文件上传、知识库入库、算力下载都在后台进行，切换页面不会中断。",
+    empty: "现在没有任务。",
+    clear: "清除已结束的",
+    stop: "停止",
+    open: "查看",
+    kb: "知识库入库",
+    kbQueued: "还有 {n} 个文档在处理",
+    compute: "本机算力下载",
+    uploads: "文件上传",
+    runningCount: "{n} 个任务进行中",
+    status: { running: "进行中", done: "已完成", error: "出错", stopped: "已停止", failed: "失败" },
+    upload: { waiting: "等待中", uploading: "上传中", done: "已上传", failed: "失败" },
+  },
   compute: {
     getTitle: "本机算力：一键下载",
     getHint: "这台机器上还没有推理服务。点一下，程序会自己下载推理运行时和选中的模型，下完自动启用，不用再做别的设置。需要这台机器能上网。",
@@ -267,8 +283,13 @@ export default {
     vision: "看图",
   },
   models: {
+    addOnline: "添加线上 API",
+    preset: "常用服务",
+    presetCustom: "自定义（自己填地址）",
+    presetHint: "这些服务都提供 OpenAI 兼容接口。选一个会填好名称和地址，再填上你在该服务申请的密钥。使用线上服务时，对话内容和用到的资料会发送给它。",
+    defaultModelHintOnline: "填上要用的模型名称（见该服务的文档）。有的服务不提供模型列表，填了才能检测和选用。",
     title: "模型",
-    subtitle: "默认用本机的推理服务。云端模型可作为后备添加。",
+    subtitle: "默认用本机的推理服务。也可以添加线上的 API 服务（OpenAI 兼容接口），直接选用或作为后备。",
     add: "添加推理服务",
     local: "本机",
     cloud: "云端",
@@ -324,6 +345,7 @@ export default {
     enter: "进入",
   },
   errors: {
+    conversation_busy: "这个对话里的上一个回答还在生成，等它结束或先停止它。",
     compute_port_busy: "这台机器上已经有推理服务在运行，可以直接用它；要改用这里下载的，请先停掉它。",
     compute_busy: "已经有一个下载在进行。",
     compute_nothing: "请至少选一个模型。",

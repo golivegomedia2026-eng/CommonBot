@@ -1808,3 +1808,131 @@ async fn compute_is_downloaded_from_the_interface_resumed_verified_and_started()
         "compute_port_busy"
     );
 }
+
+// ---------- 后台任务 ----------
+
+/// 发出请求，只读到第一段数据就断开（模拟切到别的对话、关掉页面）。
+async fn send_and_leave(app: &Router, path: &str, body: Value) {
+    let mut request = Request::builder()
+        .method(Method::POST)
+        .uri(path)
+        .header(header::HOST, "localhost:8600")
+        .header(header::CONTENT_TYPE, "application/json")
+        .body(Body::from(body.to_string()))
+        .unwrap();
+    request.extensions_mut().insert(ConnectInfo(LOCAL.parse::<SocketAddr>().unwrap()));
+    let resp = app.clone().oneshot(request).await.unwrap();
+    assert_eq!(resp.status(), StatusCode::OK);
+    let mut body = resp.into_body();
+    let _first = body.frame().await;
+}
+
+async fn wait_until_idle(app: &Router) -> Value {
+    for _ in 0..300 {
+        let tasks = req(Method::GET, "/api/tasks").send(app).await.json();
+        if tasks["running"] == 0 {
+            return tasks;
+        }
+        tokio::time::sleep(std::time::Duration::from_millis(50)).await;
+    }
+    panic!("tasks never finished");
+}
+
+#[tokio::test]
+async fn a_reply_keeps_generating_after_the_page_leaves_and_can_be_rejoined_or_stopped() {
+    let app = setup().await;
+    let slow = MockConfig { delay: std::time::Duration::from_millis(25), ..Default::default() };
+    let pid = add_provider(&app, &commonbot_mock_llm::spawn(slow).await, None).await;
+    let conv = req(Method::POST, "/api/conversations").json(json!({ "agent_id": "general" })).send(&app).await.json();
+    let cid = conv["id"].as_str().unwrap();
+    let path = format!("/api/conversations/{cid}/messages");
+    // 没有回答在生成：没什么可接的
+    assert_eq!(
+        req(Method::GET, &format!("/api/conversations/{cid}/stream")).send(&app).await.status,
+        StatusCode::NO_CONTENT
+    );
+
+    // 发出提问后马上离开
+    send_and_leave(&app, &path, json!({ "content": "讲一讲保修政策", "provider_id": pid })).await;
+    let tasks = req(Method::GET, "/api/tasks").send(&app).await.json();
+    assert_eq!(tasks["running"], 1, "{tasks}");
+    let task = &tasks["tasks"][0];
+    assert_eq!((task["kind"].as_str(), task["status"].as_str()), (Some("chat"), Some("running")));
+    assert_eq!(task["title"], "讲一讲保修政策");
+    assert_eq!(task["conversation_id"], cid);
+    // 还在生成时不能在同一个对话里再发一句
+    let busy = req(Method::POST, &path).json(json!({ "content": "再问一句", "provider_id": pid })).send(&app).await;
+    assert_eq!((busy.status, busy.json()["code"].as_str()), (StatusCode::CONFLICT, Some("conversation_busy")));
+
+    // 回来接着看：先拿到目前的内容，再收到之后的片段，最后是保存好的回答
+    let events = req(Method::GET, &format!("/api/conversations/{cid}/stream")).send(&app).await.events();
+    assert_eq!(events.first().unwrap().0, "snapshot");
+    assert_eq!(events.last().unwrap().0, "done", "{events:?}");
+    let seen: String = events
+        .iter()
+        .map(|(n, d)| match n.as_str() {
+            "snapshot" => d["content"].as_str().unwrap(),
+            "delta" => d["text"].as_str().unwrap(),
+            _ => "",
+        })
+        .collect();
+    let saved = &events.last().unwrap().1["message"];
+    assert_eq!(saved["content"].as_str().unwrap(), seen, "snapshot + later pieces is the whole reply");
+    assert!(seen.contains("讲一讲保修政策"));
+    assert_eq!(saved["status"], "ok");
+    let got = req(Method::GET, &format!("/api/conversations/{cid}")).send(&app).await.json();
+    assert_eq!(got["messages"].as_array().unwrap().len(), 2);
+
+    // 叫停：已生成的部分保存下来，标为已停止
+    send_and_leave(&app, &path, json!({ "content": "再讲长一点", "provider_id": pid })).await;
+    tokio::time::sleep(std::time::Duration::from_millis(120)).await;
+    assert_eq!(
+        req(Method::POST, &format!("/api/conversations/{cid}/stop")).send(&app).await.status,
+        StatusCode::NO_CONTENT
+    );
+    let tasks = wait_until_idle(&app).await;
+    let statuses: Vec<&str> =
+        tasks["tasks"].as_array().unwrap().iter().map(|t| t["status"].as_str().unwrap()).collect();
+    assert_eq!(statuses, ["stopped", "done"], "newest first: {tasks}");
+    let got = req(Method::GET, &format!("/api/conversations/{cid}")).send(&app).await.json();
+    let last = got["messages"].as_array().unwrap().last().unwrap().clone();
+    assert_eq!(last["status"], "stopped");
+    assert!(!last["content"].as_str().unwrap().is_empty());
+
+    // 清掉已结束的
+    assert_eq!(req(Method::POST, "/api/tasks/clear").send(&app).await.status, StatusCode::NO_CONTENT);
+    assert_eq!(req(Method::GET, "/api/tasks").send(&app).await.json()["tasks"], json!([]));
+}
+
+#[tokio::test]
+async fn an_online_service_counts_its_default_model_even_when_it_does_not_list_it() {
+    let app = setup().await;
+    let base = commonbot_mock_llm::spawn(MockConfig::default()).await;
+    let created = req(Method::POST, "/api/providers")
+        .json(json!({ "name": "线上", "kind": "cloud", "base_url": base, "default_model": "vendor-pro" }))
+        .send(&app)
+        .await
+        .json();
+    let check =
+        req(Method::POST, &format!("/api/providers/{}/check", created["id"].as_str().unwrap())).send(&app).await.json();
+    assert!(check["models"].as_array().unwrap().contains(&json!("vendor-pro")), "{check}");
+    // 一个不提供模型列表的线上服务：用默认模型实际问一句来确认
+    let bare = format!("{}/only-chat", base.trim_end_matches("/v1"));
+    let created = req(Method::POST, "/api/providers")
+        .json(json!({ "name": "只有对话接口", "kind": "cloud", "base_url": bare, "default_model": "vendor-pro" }))
+        .send(&app)
+        .await
+        .json();
+    let check =
+        req(Method::POST, &format!("/api/providers/{}/check", created["id"].as_str().unwrap())).send(&app).await;
+    assert_eq!(check.json()["models"], json!(["vendor-pro"]), "{}", check.text);
+    // 没填默认模型就没法确认：照实报错
+    let created = req(Method::POST, "/api/providers")
+        .json(json!({ "name": "没填模型", "kind": "cloud", "base_url": bare }))
+        .send(&app)
+        .await
+        .json();
+    let check =
+        req(Method::POST, &format!("/api/providers/{}/check", created["id"].as_str().unwrap())).send(&app).await;
+    assert_ne!(check.status, StatusCode::OK);
+}

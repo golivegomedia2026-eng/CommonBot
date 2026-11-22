@@ -2,13 +2,14 @@
 import { computed, nextTick, onBeforeUnmount, onMounted, reactive, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
 
-import { type Agent, api, ApiError, type Attachment, type Conversation, type Message, sendMessage, type Source } from "../api";
+import { type Agent, api, ApiError, type Attachment, type Conversation, type Message, sendMessage, type Source, type StreamEvent, watchReply } from "../api";
 import AgentConfig from "../components/AgentConfig.vue";
 import Composer from "../components/Composer.vue";
 import Icon from "../components/Icon.vue";
 import ReplyBody from "../components/ReplyBody.vue";
 import { errorCodeText, errorText } from "../i18n";
 import { loadFolders, loadProviders, state } from "../state";
+import { isGenerating, refreshTasks, tasks } from "../tasks";
 import { isToday } from "../util";
 
 const route = useRoute();
@@ -39,6 +40,8 @@ const confirming = ref("");
 const scroller = ref<HTMLElement>();
 const composer = ref<InstanceType<typeof Composer>>();
 let abort: AbortController | null = null;
+/** 每次换对话、每次开始看一个回答都加一；旧的事件流据此知道自己已经过时。 */
+let epoch = 0;
 /** 刚由发送动作新建的对话，路由变化时不必重新读取。 */
 let justCreated = "";
 
@@ -79,6 +82,7 @@ async function open(id: string) {
     web.value = got.conversation.web;
     attachments.value = got.attachments;
     toBottom(true);
+    void join(id);
   } catch (e) {
     if (e instanceof ApiError && e.code === "not_found") return void router.replace(base.value);
     error.value = errorText(e);
@@ -95,9 +99,104 @@ watch(currentId, (id) => {
     justCreated = "";
     return;
   }
+  // 离开只是不再看：回答在服务里继续生成，切回来时接着看
+  epoch++;
   abort?.abort();
+  abort = null;
+  busy.value = false;
+  clearLive();
   void open(id);
 });
+
+function clearLive() {
+  live.content = live.reasoning = live.webNote = live.fallback = "";
+  live.sources = [];
+}
+const noteKey = (note: string | null | undefined) => (note === "web_not_configured" ? "web.noteNotConfigured" : note === "web_irrelevant" ? "web.noteIrrelevant" : note ? "web.noteFailed" : "");
+
+/** 处理回答过程中的一个事件（发消息时的事件流、接上已有回答时的事件流共用）。 */
+function handle(e: StreamEvent) {
+  if (e.type === "user") {
+    const i = messages.value.findIndex((m) => m.id === "pending");
+    if (i >= 0) messages.value[i] = e.message;
+    // 随这条消息发出的文件：换成服务端确认后的记录
+    attachments.value = [...attachments.value.filter((f) => f.message_id), ...e.attachments];
+    const at = conversations.value.findIndex((c) => c.id === e.conversation.id);
+    if (at >= 0) conversations.value.splice(at, 1);
+    conversations.value.unshift(e.conversation);
+    void refreshTasks();
+  } else if (e.type === "snapshot") {
+    busy.value = true;
+    live.content = e.content;
+    live.reasoning = e.reasoning;
+    live.sources = e.sources?.sources ?? [];
+    live.webNote = noteKey(e.sources?.web_note);
+    live.fallback = e.fallback?.model ?? "";
+  } else if (e.type === "sources") {
+    live.sources = e.sources;
+    live.webNote = noteKey(e.web_note);
+  } else if (e.type === "fallback") {
+    live.fallback = e.model;
+  } else if (e.type === "delta") {
+    live.content += e.text;
+  } else if (e.type === "reasoning") {
+    live.reasoning += e.text;
+  } else if (e.type === "done" || e.type === "error") {
+    if (e.message) messages.value.push(e.message);
+    else if (e.type === "error") error.value = errorCodeText(e.code, e.detail);
+    webNote.value = live.webNote;
+    clearLive();
+    busy.value = false;
+  }
+  toBottom();
+}
+
+/** 打开一个对话时，如果它有回答正在生成，接上去继续看。 */
+async function join(id: string) {
+  const mine = ++epoch;
+  const ctl = new AbortController();
+  abort = ctl;
+  try {
+    await watchReply(id, (e) => mine === epoch && handle(e), ctl.signal);
+  } catch {
+    // 看不了不影响生成；内容会在结束后从保存的消息里读到
+  } finally {
+    if (mine === epoch) {
+      // 连接中途断了（没收到结束）：读回已保存的内容
+      const interrupted = busy.value;
+      busy.value = false;
+      clearLive();
+      abort = null;
+      if (interrupted && id === currentId.value) void reload(id);
+      void loadList().catch(() => {});
+    }
+  }
+}
+async function reload(id: string) {
+  try {
+    const got = await api.conversation(id);
+    if (id !== currentId.value) return;
+    messages.value = got.messages;
+    attachments.value = got.attachments;
+    toBottom();
+  } catch {
+    /* 下次打开时再读 */
+  }
+}
+async function stop() {
+  const id = currentId.value;
+  if (!id) return;
+  try {
+    await api.stopReply(id);
+  } catch (e) {
+    error.value = errorText(e);
+  }
+}
+// 别的对话在后台答完了：刷新左边的列表
+watch(
+  () => tasks.server.filter((t) => t.kind === "chat" && t.status === "running").length,
+  (now, before) => now < before && void loadList().catch(() => {}),
+);
 
 async function loadAgent() {
   agent.value = null;
@@ -121,7 +220,10 @@ async function loadAgent() {
 }
 watch(agentId, (id) => id && void loadAgent());
 onMounted(loadAgent);
-onBeforeUnmount(() => abort?.abort());
+onBeforeUnmount(() => {
+  epoch++;
+  abort?.abort();
+});
 
 /** 没有对话时先建一个（上传文件、发消息都需要）。 */
 async function ensureConversation(): Promise<string> {
@@ -138,6 +240,7 @@ async function attach(files: File[]) {
   try {
     const id = await ensureConversation();
     const r = await api.attach(id, files);
+    if (id !== currentId.value) return;
     attachments.value.push(...r.added);
     rejected.value = r.rejected;
   } catch (e) {
@@ -166,6 +269,7 @@ async function send(text?: string) {
   rejected.value = [];
   busy.value = true;
   let id = currentId.value;
+  let mine = epoch;
   const sending = waiting.value.map((f) => f.id);
   const pending: Message = { id: "pending", model: null, cloud: false, conversation_id: id, role: "user", content, reasoning: "", status: "ok", error_code: null, sources: [], created_at: Date.now() };
   try {
@@ -173,58 +277,38 @@ async function send(text?: string) {
     messages.value.push(pending);
     if (text === undefined) draft.value = "";
     toBottom(true);
-    abort = new AbortController();
+    mine = ++epoch;
+    abort?.abort();
+    const ctl = new AbortController();
+    abort = ctl;
     await sendMessage(
       id,
       { content, ...(fixed ? {} : { provider_id: providerId, model }), ...(scope.value ? { scope: scope.value } : {}), ...(web.value === null ? {} : { web: web.value }), ...(sending.length ? { attachment_ids: sending } : {}) },
-      (e) => {
-        if (e.type === "user") {
-          const i = messages.value.findIndex((m) => m.id === "pending");
-          if (i >= 0) messages.value[i] = e.message;
-          // 随这条消息发出的文件：换成服务端确认后的记录
-          attachments.value = [...attachments.value.filter((f) => f.message_id), ...e.attachments];
-          const at = conversations.value.findIndex((c) => c.id === e.conversation.id);
-          if (at >= 0) conversations.value.splice(at, 1);
-          conversations.value.unshift(e.conversation);
-        } else if (e.type === "sources") {
-          live.sources = e.sources;
-          live.webNote = e.web_note === "web_not_configured" ? "web.noteNotConfigured" : e.web_note === "web_irrelevant" ? "web.noteIrrelevant" : e.web_note ? "web.noteFailed" : "";
-        } else if (e.type === "fallback") {
-          live.fallback = e.model;
-        } else if (e.type === "delta") {
-          live.content += e.text;
-        } else if (e.type === "reasoning") {
-          live.reasoning += e.text;
-        } else if (e.type === "done" || e.type === "error") {
-          if (e.message) messages.value.push(e.message);
-          else if (e.type === "error") error.value = errorCodeText(e.code, e.detail);
-          webNote.value = live.webNote;
-          live.content = live.reasoning = live.webNote = live.fallback = "";
-          live.sources = [];
-        }
-        toBottom();
-      },
-      abort.signal,
+      (e) => mine === epoch && handle(e),
+      ctl.signal,
     );
   } catch (e) {
-    if ((e as Error).name === "AbortError") {
-      // 服务在连接断开后保存已生成的部分，稍等再读回来
-      await new Promise((r) => setTimeout(r, 400));
-      if (id === currentId.value) await open(id);
-    } else {
-      const i = messages.value.findIndex((m) => m.id === "pending");
-      if (i >= 0) {
-        messages.value.splice(i, 1);
-        if (text === undefined) draft.value = content;
-      }
-      error.value = errorText(e);
+    // 切到别的对话了：回答在后台继续，这里不用管
+    if (mine !== epoch || (e as Error).name === "AbortError") return;
+    const i = messages.value.findIndex((m) => m.id === "pending");
+    if (i >= 0) {
+      messages.value.splice(i, 1);
+      if (text === undefined) draft.value = content;
     }
+    error.value = errorText(e);
   } finally {
-    live.content = live.reasoning = live.webNote = live.fallback = "";
-    live.sources = [];
-    busy.value = false;
-    abort = null;
+    if (mine === epoch) {
+      // 没收到结束就断了（比如网络中断）：回答仍在后台生成，重新接上
+      const interrupted = busy.value && !!abort && !error.value;
+      clearLive();
+      busy.value = false;
+      abort = null;
+      if (interrupted && id && id === currentId.value) void reload(id).then(() => {
+          if (id === currentId.value) void join(id);
+        });
+    }
     void loadList().catch(() => {});
+    void refreshTasks();
   }
 }
 
@@ -268,6 +352,7 @@ function saved(a: Agent) {
       <template v-for="g in groups" :key="g.label">
         <small v-if="g.items.length">{{ $t(g.label) }}</small>
         <div v-for="c in g.items" :key="c.id" class="h" :class="{ on: c.id === currentId }" role="link" tabindex="0" @click="router.push(`${base}/${c.id}`)" @keydown.enter="router.push(`${base}/${c.id}`)">
+          <i v-if="isGenerating(c.id)" class="gen" :title="$t('tasks.status.running')" />
           <span :title="c.title">{{ confirming === c.id ? $t("common.confirmDelete") : c.title || $t("chat.newChat") }}</span>
           <button class="x" :aria-label="$t('common.delete')" :title="$t('common.delete')" @click.stop="remove(c.id)"><Icon name="x" /></button>
         </div>
@@ -303,7 +388,7 @@ function saved(a: Agent) {
       <div v-if="agent?.examples.length && !busy && !messages.length" class="quick">
         <button v-for="q in agent.examples" :key="q" class="chip" @click="send(q)">{{ q }}</button>
       </div>
-      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" :locked-model="agent?.model" v-model:scope="scope" :default-scope="agent?.folders ?? []" v-model:web="web" :default-web="agent?.web === 'always'" :attachments="waiting" :attaching="attaching" @attach="attach" @detach="detach" @send="send()" @stop="abort?.abort()" />
+      <Composer ref="composer" v-model="draft" :busy="busy" :placeholder="$t('chat.placeholder')" :locked-model="agent?.model" v-model:scope="scope" :default-scope="agent?.folders ?? []" v-model:web="web" :default-web="agent?.web === 'always'" :attachments="waiting" :attaching="attaching" @attach="attach" @detach="detach" @send="send()" @stop="stop" />
       <div class="tip">{{ $t("web.uploadHint") }}</div>
     </div>
   </div>

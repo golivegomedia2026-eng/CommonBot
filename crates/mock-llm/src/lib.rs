@@ -28,6 +28,8 @@ pub fn router(cfg: MockConfig) -> Router {
     Router::new()
         .route("/v1/models", get(models))
         .route("/v1/chat/completions", post(chat))
+        // 一个只有对话接口、不提供模型列表的服务
+        .route("/only-chat/chat/completions", post(chat))
         .route("/v1/embeddings", post(embeddings))
         .route("/search", get(search))
         .route("/page/{n}", get(page))
@@ -147,6 +149,8 @@ async fn chat(State(cfg): State<MockConfig>, headers: HeaderMap, Json(body): Jso
     if body["stream"] == false {
         return Json(json!({ "choices": [{ "message": { "role": "assistant", "content": reply } }] })).into_response();
     }
+    // 提问里带「长篇」时把回答拉长，用来测试生成途中的操作
+    let reply = if reply.contains("长篇") { format!("{reply}\n\n{}", "这是一段用来拉长回答的文字。".repeat(40)) } else { reply };
     // 按字符切成小段，故意让汉字落在不同的数据块里。
     let chars: Vec<char> = reply.chars().collect();
     let mut events: Vec<Value> = vec![json!({ "choices": [{ "delta": { "reasoning_content": "先想一想。" } }] })];
